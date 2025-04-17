@@ -1,19 +1,19 @@
 # Cloudflare GSLB
 
-CloudflareのDNSレコードに対するヘルスチェックと自動フェイルオーバーを提供するGSLB（Global Server Load Balancing）システムです。
+A Global Server Load Balancing (GSLB) system that provides health checks and automatic failover for Cloudflare DNS records.
 
-## 機能
+## Features
 
-- AレコードとAAAAレコードに対するヘルスチェック
-- HTTPSヘルスチェック（カスタムパスとホスト名の指定可能）
-- HTTPヘルスチェック（カスタムパスとホスト名の指定可能）
-- ICMPヘルスチェック
-- 異常検知時の自動DNSレコード置き換え
-- 設定可能なチェック間隔
-- カスタムフェイルオーバーIPアドレスのリスト設定
-- オリジンごとのCloudflareプロキシ設定
+- Health checks for A and AAAA records
+- HTTPS health checks (with customizable paths and hostnames)
+- HTTP health checks (with customizable paths and hostnames)
+- ICMP health checks
+- Automatic DNS record replacement upon anomaly detection
+- Configurable check intervals
+- Custom failover IP address list configuration
+- Cloudflare proxy settings for each origin
 
-## インストール
+## Installation
 
 ```bash
 git clone https://github.com/bootjp/cloudflare-gslb.git
@@ -21,15 +21,15 @@ cd cloudflare-gslb
 go build -o gslb ./cmd/gslb
 ```
 
-## 設定
+## Configuration
 
-`config.json.example`をコピーして`config.json`を作成し、必要な設定を行います。
+Copy `config.json.example` to create `config.json` and configure the necessary settings.
 
 ```bash
 cp config.json.example config.json
 ```
 
-設定ファイルの例:
+Example configuration file:
 
 ```json
 {
@@ -91,108 +91,124 @@ cp config.json.example config.json
 }
 ```
 
-### 設定項目
+### Configuration Options
 
-- `cloudflare_api_token`: CloudflareのAPIトークン
-- `cloudflare_zone_id`: 対象のゾーンID
-- `check_interval_seconds`: ヘルスチェックの間隔（秒）
-- `origins`: モニタリング対象のオリジン設定
-  - `name`: DNSレコード名
-  - `record_type`: レコードタイプ（"A"または"AAAA"）
-  - `health_check`: ヘルスチェック設定
-    - `type`: チェックタイプ（"http", "https", "icmp"）
-    - `endpoint`: HTTPSの場合のパス（例: "/health"）
-    - `host`: HTTPSの場合のホスト名（例: "example.com"）
-    - `timeout`: タイムアウト（秒）
-  - `priority_failover_ips`: 優先的に使用するフェイルオーバー用IPアドレスのリスト（オプション）
-    - 設定した場合、通常はこのIPが使用され、障害が発生した場合のみ通常のフェイルオーバーIPに切り替わります
-    - 通常は定額課金のサーバーなど、常に使用したいIPを設定します
-  - `failover_ips`: フェイルオーバー用IPアドレスのリスト（オプション）
-    - 設定した場合、ヘルスチェック失敗時にこのリストから順番にIPアドレスを使用
-    - 設定しない場合、既存IPの最後のオクテット（IPv4）またはセグメント（IPv6）を+1したアドレスを使用
-  - `proxied`: Cloudflareのプロキシ機能を有効にするかどうか（オプション、デフォルトはfalse）
-    - `true`: DNSレコード更新時にCloudflareのプロキシを有効にする
-    - `false`: プロキシを無効にし、直接IPアドレスにアクセスさせる
-  - `return_to_priority`: 優先IPが正常に戻った際に自動的に戻すかどうか（オプション、デフォルトはfalse）
-    - `true`: 優先IPが正常になった際に自動的に優先IPに戻します
-    - `false`: 一度フェイルオーバーすると手動で戻すまで優先IPに戻りません
+- `cloudflare_api_token`: Cloudflare API token
+- `cloudflare_zone_id`: Target zone ID
+- `check_interval_seconds`: Health check interval (in seconds)
+- `origins`: Configuration for origins to monitor
+  - `name`: DNS record name
+  - `record_type`: Record type ("A" or "AAAA")
+  - `health_check`: Health check configuration
+    - `type`: Check type ("http", "https", "icmp")
+    - `endpoint`: Path for HTTPS/HTTP (e.g., "/health")
+    - `host`: Hostname for HTTPS/HTTP (e.g., "example.com")
+    - `timeout`: Timeout (in seconds)
+  - `priority_failover_ips`: List of priority failover IP addresses (optional)
+    - When configured, these IPs are used normally and switch to regular failover IPs only when failures occur
+    - Typically used for fixed-cost servers that you want to use consistently
+  - `failover_ips`: List of failover IP addresses (optional)
+    - When configured, IPs from this list are used in sequence if health checks fail
+    - If not configured, an IP with the last octet (IPv4) or segment (IPv6) incremented by 1 is used
+  - `proxied`: Whether to enable Cloudflare's proxy feature (optional, default is false)
+    - `true`: Enable Cloudflare proxy when updating DNS records
+    - `false`: Disable proxy, allowing direct access to IP addresses
+  - `return_to_priority`: Whether to automatically return to priority IP when it recovers (optional, default is false)
+    - `true`: Automatically returns to the priority IP when it becomes healthy
+    - `false`: Once failover occurs, it won't return to the priority IP until manually reset
 
-### フェイルオーバーIPリストの動作
+### Failover IP List Behavior
 
-フェイルオーバーIPリストが設定されている場合、以下のように動作します：
+When a failover IP list is configured, it operates as follows:
 
-1. ヘルスチェックが失敗すると、リストの次のIPアドレスに切り替えます
-2. リストの最後まで達した場合、最初のIPからループします
-3. 各オリジンごとに独立してIPのローテーションを管理します
-4. レコードタイプ（AまたはAAAA）に合わせて、適切なIPタイプかどうかチェックします
+1. When a health check fails, it switches to the next IP address in the list
+2. If it reaches the end of the list, it loops back to the first IP
+3. IP rotation is managed independently for each origin
+4. It checks whether the IP type is appropriate for the record type (A or AAAA)
 
-### 優先IPとフェイルオーバーIPの活用方法
+### Utilizing Priority IPs and Failover IPs
 
-優先IPとフェイルオーバーIPを組み合わせることで、以下のようなリソース効率化が可能です：
+By combining priority IPs and failover IPs, you can optimize resource efficiency as follows:
 
-1. 通常時は定額課金（例：専用サーバー）の優先IPに転送
-2. 障害発生時のみ従量課金（例：クラウドVM）のフェイルオーバーIPに転送
-3. 優先IPが復旧したら自動的に優先IPに戻す（`return_to_priority: true`の場合）
+1. During normal operation, traffic is directed to priority IPs (e.g., dedicated servers with fixed pricing)
+2. During outages, traffic is directed to failover IPs (e.g., cloud VMs with pay-as-you-go pricing)
+3. When the priority IP recovers, traffic automatically returns to it (if `return_to_priority: true`)
 
-これにより、以下のメリットが得られます：
-- 平常時のコスト最適化（定額制リソースを優先使用）
-- 障害時の可用性確保（従量課金リソースでバックアップ）
-- 復旧時の自動切り戻しによる運用負荷軽減
+This approach offers the following benefits:
+- Cost optimization during normal operation (prioritizing fixed-cost resources)
+- Availability assurance during outages (backup with pay-as-you-go resources)
+- Reduced operational burden with automatic failback upon recovery
 
-### プロキシ設定について
+### About Proxy Settings
 
-各オリジンごとに個別にCloudflareのプロキシ設定を指定できます：
+You can specify Cloudflare proxy settings individually for each origin:
 
-- プロキシ有効時（`"proxied": true`）:
-  - トラフィックはCloudflareのネットワークを経由します
-  - Cloudflareのセキュリティ保護（WAF、DDoS保護など）が適用されます
-  - オリジンサーバーのIPアドレスは隠蔽されます
-  - HTTP/2、TLS 1.3などの最新プロトコルが利用可能になります
+- With proxy enabled (`"proxied": true`):
+  - Traffic passes through Cloudflare's network
+  - Cloudflare security protections (WAF, DDoS protection, etc.) are applied
+  - The origin server's IP address is masked
+  - Modern protocols like HTTP/2 and TLS 1.3 become available
 
-- プロキシ無効時（`"proxied": false`）:
-  - トラフィックは直接オリジンサーバーに送られます
-  - Cloudflareのセキュリティ保護は適用されません
-  - オリジンサーバーのIPアドレスは公開されます
-  - ICMPヘルスチェックを使用する場合や、直接接続が必要な場合に適しています
+- With proxy disabled (`"proxied": false`):
+  - Traffic is sent directly to the origin server
+  - Cloudflare security protections are not applied
+  - The origin server's IP address is exposed
+  - Suitable when using ICMP health checks or when direct connections are required
 
-## 使用方法
+## Usage
 
 ```bash
 ./gslb -config config.json
 ```
 
-代替の設定ファイルパスを指定することもできます:
+You can also specify an alternative configuration file path:
 
 ```bash
 ./gslb -config /path/to/your/config.json
 ```
 
-## テスト
+## Testing
 
-テストを実行するには以下のコマンドを使用します：
+To run tests, use the following command:
 
 ```bash
 go test ./...
 ```
 
-詳細な出力を得るには `-v` オプションを追加します：
+For detailed output, add the `-v` option:
 
 ```bash
 go test ./... -v
 ```
 
-カバレッジレポートを生成するには：
+To generate a coverage report:
 
 ```bash
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out
 ```
 
-## 注意事項
+## Important Notes
 
-- このツールを使用するには、CloudflareのAPIトークンに適切な権限（DNS編集権限）が必要です。
-- ICMPヘルスチェックを使用するには、特権が必要な場合があります（多くのシステムではroot権限が必要です）。
-- プロキシ機能を有効にする場合、IPアドレスはCloudflareのネットワークを経由するため、特定のプロトコルや設定が制限される場合があります。
-- ICMPヘルスチェックを使用する場合は、通常プロキシを無効（`"proxied": false`）にする必要があります。
-- 実際の環境で使用する前に、テスト環境でテストすることをお勧めします。
-- Cloudflareのプロキシフラグをオフにしている場合でも、フェイルオーバーIPリストを設定しておくことで、柔軟で信頼性の高いフェイルオーバーが可能になります。 
+- This tool requires a Cloudflare API token with appropriate permissions (DNS editing permissions).
+- ICMP health checks may require privileges (often root permissions on many systems).
+- When the proxy feature is enabled, IP addresses will route through Cloudflare's network, which may restrict certain protocols or configurations.
+- When using ICMP health checks, you typically need to disable the proxy (`"proxied": false`).
+- It is recommended to test in a testing environment before using in a production environment.
+- Even if you have Cloudflare's proxy flag turned off, configuring a failover IP list enables flexible and reliable failover.
+
+## Limitations of Cloudflare DNS Round Robin
+
+While Cloudflare advertises DNS Round Robin as a "zero-downtime" solution, it's important to note a significant limitation: **when using Cloudflare Proxy (orange cloud), DNS Round Robin does not properly failover in case of server failures**.
+
+When a server fails behind Cloudflare Proxy:
+1. The DNS Round Robin continues to include the failed server's IP in rotation
+2. Cloudflare's proxy attempts to connect to the failed server
+3. Users experience connection failures or timeouts when their requests are routed to the failed server
+
+This occurs because the proxy layer masks the actual server failures from the DNS layer. To achieve true zero-downtime with Cloudflare services, consider using:
+- This GSLB solution, which actively monitors servers and updates DNS records
+- Cloudflare Load Balancers (a paid service that properly handles failover)
+- Server-side health checks with proper error handling
+
+If you must use DNS Round Robin with proxied records, implement additional client-side retry logic to handle potential failures. 
