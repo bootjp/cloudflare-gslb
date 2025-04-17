@@ -1,0 +1,48 @@
+version: "2"
+run:
+  tests: false
+linters:
+  enable:
+    - copyloopvar
+    - cyclop
+    - dupl
+    - durationcheck
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - makezero
+    - nakedret
+    - nestif
+    - nilerr
+    - noctx
+    - prealloc
+    - unconvert
+    - unparam
+    - wastedassign
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - openapi
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - openapi
+      - third_party$
+      - builtin$
+      - examples$

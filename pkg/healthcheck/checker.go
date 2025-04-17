@@ -63,6 +63,7 @@ func (h *HttpChecker) Check(ip string) error {
 	// HTTPSの場合、証明書検証の設定を適用
 	if h.Scheme == "https" {
 		transport.TLSClientConfig = &tls.Config{
+			// #nosec G402 - InsecureSkipVerifyはユーザーが明示的に設定する場合のみ有効
 			InsecureSkipVerify: h.InsecureSkipVerify,
 		}
 	}
@@ -73,7 +74,7 @@ func (h *HttpChecker) Check(ip string) error {
 	}
 
 	url := fmt.Sprintf("%s://%s%s", h.Scheme, ip, h.Endpoint)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
 	if err != nil {
 		return err
 	}

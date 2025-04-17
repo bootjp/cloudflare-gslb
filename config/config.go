@@ -42,14 +42,24 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	defer file.Close()
 
-	var config Config
+	var tmpConfig struct {
+		CloudflareAPIToken string         `json:"cloudflare_api_token"`
+		CloudflareZoneID   string         `json:"cloudflare_zone_id"`
+		CheckInterval      int            `json:"check_interval_seconds"`
+		Origins            []OriginConfig `json:"origins"`
+	}
+
 	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&config); err != nil {
+	if err := decoder.Decode(&tmpConfig); err != nil {
 		return nil, err
 	}
 
-	// 秒をDurationに変換
-	config.CheckInterval = config.CheckInterval * time.Second
+	config := &Config{
+		CloudflareAPIToken: tmpConfig.CloudflareAPIToken,
+		CloudflareZoneID:   tmpConfig.CloudflareZoneID,
+		CheckInterval:      time.Duration(tmpConfig.CheckInterval) * time.Second,
+		Origins:            tmpConfig.Origins,
+	}
 
-	return &config, nil
+	return config, nil
 }

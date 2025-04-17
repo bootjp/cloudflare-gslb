@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -13,17 +12,19 @@ import (
 )
 
 func main() {
-	// コマンドライン引数の解析
-	configPath := flag.String("config", "config.json", "Path to configuration file")
-	flag.Parse()
-
-	// 設定ファイルの読み込み
-	cfg, err := config.LoadConfig(*configPath)
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+	// 設定ファイルのパスを取得
+	configPath := "config.json"
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
 	}
 
-	// GSLBサービスの作成
+	// 設定ファイルの読み込み
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// サービスの作成
 	service, err := gslb.NewService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create GSLB service: %v", err)
@@ -39,7 +40,8 @@ func main() {
 
 	// サービスの開始
 	if err := service.Start(ctx); err != nil {
-		log.Fatalf("Failed to start GSLB service: %v", err)
+		log.Printf("Failed to start GSLB service: %v", err)
+		return
 	}
 
 	// シグナルを待機
