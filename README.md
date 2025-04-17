@@ -234,7 +234,6 @@ go tool cover -html=coverage.out
 - This tool requires a Cloudflare API token with appropriate permissions (DNS editing permissions).
 - ICMP health checks may require privileges (often root permissions on many systems).
 - When the proxy feature is enabled, IP addresses will route through Cloudflare's network, which may restrict certain protocols or configurations.
-- When using ICMP health checks, you typically need to disable the proxy (`"proxied": false`).
 - It is recommended to test in a testing environment before using in a production environment.
 - Even if you have Cloudflare's proxy flag turned off, configuring a failover IP list enables flexible and reliable failover.
 
