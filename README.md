@@ -47,16 +47,15 @@ Example configuration file:
         "timeout": 5
       },
       "priority_failover_ips": [
-        "192.168.1.2",
-        "192.168.1.3",
-        "192.168.1.4"
+        "192.168.1.1"
       ],
       "failover_ips": [
         "192.168.1.2",
         "192.168.1.3",
         "192.168.1.4"
       ],
-      "proxied": true
+      "proxied": true,
+      "return_to_priority": true
     },
     {
       "name": "api.example.com",
@@ -67,11 +66,15 @@ Example configuration file:
         "host": "api.example.com",
         "timeout": 5
       },
+      "priority_failover_ips": [
+        "10.0.0.1"
+      ],
       "failover_ips": [
         "10.0.0.2",
         "10.0.0.3"
       ],
-      "proxied": true
+      "proxied": true,
+      "return_to_priority": true
     },
     {
       "name": "ipv6.example.com",
@@ -80,12 +83,16 @@ Example configuration file:
         "type": "icmp",
         "timeout": 5
       },
+      "priority_failover_ips": [
+        "2001:db8::1"
+      ],
       "failover_ips": [
         "2001:db8::2",
         "2001:db8::3",
         "2001:db8::4"
       ],
-      "proxied": false
+      "proxied": false,
+      "return_to_priority": true
     }
   ]
 }
@@ -104,10 +111,11 @@ Example configuration file:
     - `endpoint`: Path for HTTPS/HTTP (e.g., "/health")
     - `host`: Hostname for HTTPS/HTTP (e.g., "example.com")
     - `timeout`: Timeout (in seconds)
-  - `priority_failover_ips`: List of priority failover IP addresses (optional)
-    - When configured, these IPs are used normally and switch to regular failover IPs only when failures occur
+    - `insecure_skip_verify`: Skip SSL verification for HTTPS (optional, default is false)
+  - `priority_failover_ips`: List of priority failover IP addresses
+    - These IPs are used normally and switch to regular failover IPs only when failures occur
     - Typically used for fixed-cost servers that you want to use consistently
-  - `failover_ips`: List of failover IP addresses (optional)
+  - `failover_ips`: List of failover IP addresses
     - When configured, IPs from this list are used in sequence if health checks fail
     - If not configured, an IP with the last octet (IPv4) or segment (IPv6) incremented by 1 is used
   - `proxied`: Whether to enable Cloudflare's proxy feature (optional, default is false)

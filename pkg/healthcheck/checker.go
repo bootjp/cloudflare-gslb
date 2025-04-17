@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bootjp/cloudflare-gslb/config"
+	"github.com/cockroachdb/errors"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
@@ -19,6 +20,13 @@ import (
 type Checker interface {
 	Check(ip string) error
 }
+
+// エラー定義
+var (
+	ErrUnknownHealthCheckType = errors.New("unknown health check type")
+	ErrUnexpectedStatusCode   = errors.New("unexpected status code")
+	ErrUnexpectedICMPType     = errors.New("unexpected ICMP message type")
+)
 
 // NewChecker は設定に基づいたヘルスチェッカーを作成する
 func NewChecker(hc config.HealthCheck) (Checker, error) {
@@ -43,7 +51,7 @@ func NewChecker(hc config.HealthCheck) (Checker, error) {
 			Timeout: time.Duration(hc.Timeout) * time.Second,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unknown health check type: %s", hc.Type)
+		return nil, errors.WithStack(ErrUnknownHealthCheckType)
 	}
 }
 
@@ -76,7 +84,7 @@ func (h *HttpChecker) Check(ip string) error {
 	url := fmt.Sprintf("%s://%s%s", h.Scheme, ip, h.Endpoint)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// ホスト名が指定されている場合はヘッダーを設定
@@ -87,13 +95,13 @@ func (h *HttpChecker) Check(ip string) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	defer resp.Body.Close()
 
 	// 200番台のステータスコードであれば正常とみなす
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return errors.WithStack(ErrUnexpectedStatusCode)
 	}
 
 	return nil
@@ -120,7 +128,7 @@ func (i *IcmpChecker) Check(ip string) error {
 
 	conn, err := icmp.ListenPacket(network, "")
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	defer conn.Close()
 
@@ -137,7 +145,7 @@ func (i *IcmpChecker) Check(ip string) error {
 
 	binMsg, err := msg.Marshal(nil)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// タイムアウトの設定
@@ -147,7 +155,7 @@ func (i *IcmpChecker) Check(ip string) error {
 
 	// ICMPパケットの送信
 	if _, err := conn.WriteTo(binMsg, &net.UDPAddr{IP: net.ParseIP(ip)}); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// 応答待機のためのバッファ
@@ -155,24 +163,24 @@ func (i *IcmpChecker) Check(ip string) error {
 
 	// 読み取りタイムアウトの設定
 	if err := conn.SetReadDeadline(time.Now().Add(i.Timeout)); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// 応答の待機
 	n, _, err := conn.ReadFrom(reply)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// 応答の解析
 	parsedMsg, err := icmp.ParseMessage(protocol, reply[:n])
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	// エコー応答の確認
 	if parsedMsg.Type != getICMPEchoReplyType(protocol) {
-		return fmt.Errorf("unexpected ICMP message type: %v", parsedMsg.Type)
+		return errors.WithStack(ErrUnexpectedICMPType)
 	}
 
 	return nil
