@@ -12,6 +12,7 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - Configurable check intervals
 - Custom failover IP address list configuration
 - Cloudflare proxy settings for each origin
+- One-shot mode for batch health checks via CLI or Docker container
 
 ## Installation
 
@@ -174,6 +175,38 @@ You can also specify an alternative configuration file path:
 ```bash
 ./gslb -config /path/to/your/config.json
 ```
+
+### One-shot Mode
+
+One-shot mode performs health checks and necessary failovers once without running continuously:
+
+```bash
+./cloudflare-gslb-oneshot -config config.json
+```
+
+This is useful for:
+- Running health checks via cron jobs
+- Batch processing in CI/CD pipelines
+- Kubernetes CronJobs
+- Testing configuration
+
+### Docker Usage
+
+The application is available as Docker images for both continuous and one-shot modes:
+
+#### Continuous Mode
+
+```bash
+docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/yourusername/cloudflare-gslb-x86:latest
+```
+
+#### One-shot Mode
+
+```bash
+docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/yourusername/cloudflare-gslb-oneshot-x86:latest
+```
+
+ARM64 images are also available with the `-arm` suffix.
 
 ## Testing
 

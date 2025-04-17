@@ -17,10 +17,11 @@ import (
 
 // エラー定義
 var (
-	ErrNoFailoverIPs      = errors.New("no failover IPs configured")
-	ErrInvalidIPAddress   = errors.New("invalid IP address")
-	ErrInvalidIPv4Address = errors.New("not a valid IPv4 address for A record")
-	ErrInvalidIPv6Address = errors.New("not a valid IPv6 address for AAAA record")
+	ErrNoFailoverIPs         = errors.New("no failover IPs configured")
+	ErrInvalidIPAddress      = errors.New("invalid IP address")
+	ErrInvalidIPv4Address    = errors.New("not a valid IPv4 address for A record")
+	ErrInvalidIPv6Address    = errors.New("not a valid IPv6 address for AAAA record")
+	ErrUnsupportedRecordType = errors.New("unsupported record type")
 )
 
 // OriginStatus はオリジンの現在の状態を表す構造体
@@ -343,6 +344,11 @@ func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.Orig
 
 	// フェイルオーバーIPが設定されている場合
 	if len(origin.FailoverIPs) > 0 {
+		// 現在のIPアドレスを検証（無効なIPの場合は処理を中断）
+		if err := s.validateIPType(origin.RecordType, unhealthyRecord.Content); err != nil {
+			return err
+		}
+
 		return s.useNextFailoverIP(ctx, origin, unhealthyRecord, dnsClient, originKey)
 	}
 
@@ -391,6 +397,11 @@ func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginCon
 
 // validateIPType はIPアドレスがレコードタイプに合っているかを検証する
 func (s *Service) validateIPType(recordType, ipAddress string) error {
+	// サポートされるレコードタイプをチェック
+	if recordType != "A" && recordType != "AAAA" {
+		return errors.WithStack(ErrUnsupportedRecordType)
+	}
+
 	ip := net.ParseIP(ipAddress)
 	if ip == nil {
 		return errors.WithStack(ErrInvalidIPAddress)
@@ -402,5 +413,80 @@ func (s *Service) validateIPType(recordType, ipAddress string) error {
 		return errors.WithStack(ErrInvalidIPv6Address)
 	}
 
+	return nil
+}
+
+// RunOneShot は一回のみのヘルスチェックとフェイルオーバーを実行します
+func (s *Service) RunOneShot(ctx context.Context) error {
+	log.Println("Running one-shot health check for all origins...")
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(s.config.Origins))
+
+	for _, origin := range s.config.Origins {
+		wg.Add(1)
+		go func(o config.OriginConfig) {
+			defer wg.Done()
+
+			// ヘルスチェッカーを作成
+			checker, err := healthcheck.NewChecker(o.HealthCheck)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to create health checker for %s: %v", o.Name, err)
+				return
+			}
+
+			log.Printf("Checking origin: %s (%s)", o.Name, o.RecordType)
+
+			// オリジンのキーを生成
+			originKey := fmt.Sprintf("%s-%s", o.Name, o.RecordType)
+
+			// 状態の初期化（なければ）
+			status := s.getOrInitOriginStatus(originKey)
+
+			// オリジンのDNSレコードを取得
+			dnsClient := s.getDNSClientForOrigin(o)
+			records, err := dnsClient.GetDNSRecords(ctx, o.Name, o.RecordType)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to get DNS records for %s: %v", o.Name, err)
+				return
+			}
+
+			if len(records) == 0 {
+				log.Printf("No DNS records found for %s (%s)", o.Name, o.RecordType)
+				return
+			}
+
+			// 各レコードをチェック
+			for _, record := range records {
+				s.processRecord(ctx, o, record, checker, status)
+			}
+
+			// 優先IPのヘルスチェック（優先IPに戻るオプションが有効な場合）
+			if o.ReturnToPriority && len(o.PriorityFailoverIPs) > 0 {
+				log.Printf("ReturnToPriority is enabled, checking priority IPs for %s", o.Name)
+				s.checkPriorityIPs(ctx, o, checker)
+			}
+		}(origin)
+	}
+
+	// すべてのチェックが完了するのを待つ
+	wg.Wait()
+	close(errCh)
+
+	// エラーがあれば報告
+	var multiErr error
+	for err := range errCh {
+		if multiErr == nil {
+			multiErr = err
+		} else {
+			multiErr = fmt.Errorf("%v; %w", multiErr, err)
+		}
+	}
+
+	if multiErr != nil {
+		return multiErr
+	}
+
+	log.Println("One-shot health check completed")
 	return nil
 }

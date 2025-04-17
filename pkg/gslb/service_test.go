@@ -35,6 +35,7 @@ func createTestService() (*Service, *cfmock.DNSClientMock) {
 					Endpoint: "/health",
 					Timeout:  5,
 				},
+				FailoverIPs: []string{"192.168.1.2", "192.168.1.3"},
 			},
 		},
 	}
@@ -195,30 +196,35 @@ func TestService_replaceUnhealthyRecord(t *testing.T) {
 		name          string
 		recordType    string
 		recordContent string
+		failoverIPs   []string
 		expectError   bool
 	}{
 		{
 			name:          "replace A record",
 			recordType:    "A",
 			recordContent: "192.168.1.1",
+			failoverIPs:   []string{"192.168.1.2", "192.168.1.3"},
 			expectError:   false,
 		},
 		{
 			name:          "replace AAAA record",
 			recordType:    "AAAA",
 			recordContent: "2001:db8::1",
+			failoverIPs:   []string{"2001:db8::2", "2001:db8::3"},
 			expectError:   false,
 		},
 		{
 			name:          "invalid A record",
 			recordType:    "A",
 			recordContent: "invalid-ip",
+			failoverIPs:   []string{"192.168.1.2", "192.168.1.3"},
 			expectError:   true,
 		},
 		{
 			name:          "unsupported record type",
 			recordType:    "CNAME",
 			recordContent: "example.com",
+			failoverIPs:   []string{},
 			expectError:   true,
 		},
 	}
@@ -246,8 +252,9 @@ func TestService_replaceUnhealthyRecord(t *testing.T) {
 
 			// テスト対象のメソッドを実行
 			origin := config.OriginConfig{
-				Name:       "example.com",
-				RecordType: tt.recordType,
+				Name:        "example.com",
+				RecordType:  tt.recordType,
+				FailoverIPs: tt.failoverIPs,
 			}
 			record := cf.DNSRecord{
 				ID:      "record-1",
@@ -264,8 +271,12 @@ func TestService_replaceUnhealthyRecord(t *testing.T) {
 			}
 
 			// エラーがない場合はReplaceRecordsが呼ばれたか確認
-			if !tt.expectError && replaceCallCount != 1 {
-				t.Errorf("ReplaceRecords was called %d times, expected 1", replaceCallCount)
+			expectedCalls := 0
+			if !tt.expectError {
+				expectedCalls = 1
+			}
+			if replaceCallCount != expectedCalls {
+				t.Errorf("ReplaceRecords was called %d times, expected %d", replaceCallCount, expectedCalls)
 			}
 		})
 	}
