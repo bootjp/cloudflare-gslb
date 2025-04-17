@@ -1,0 +1,27 @@
+# バイナリ
+/gslb
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# テスト
+*.test
+*.tmp
+
+# 依存関係
+/vendor/
+
+# IDEの設定
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS固有のファイル
+.DS_Store
+Thumbs.db
+
+# 設定ファイル（サンプルは除く）
+config.json 
