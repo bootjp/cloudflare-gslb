@@ -197,16 +197,16 @@ The application is available as Docker images for both continuous and one-shot m
 #### Continuous Mode
 
 ```bash
-docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb-x86:main
+docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb:main
 ```
 
 #### One-shot Mode
 
 ```bash
-docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb-oneshot-x86:main
+docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb-oneshot:main
 ```
 
-ARM64 images are also available with the `-arm` suffix.
+Both images support multiple architectures (amd64/x86_64 and arm64) automatically.
 
 ## Testing
 
