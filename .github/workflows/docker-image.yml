@@ -145,4 +145,6 @@ jobs:
       
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:$(echo ${{ steps.meta.outputs.tags }} | head -n 1) 
+          firstTag=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+          echo "Inspecting image: $firstTag"
+          docker buildx imagetools inspect $firstTag 
