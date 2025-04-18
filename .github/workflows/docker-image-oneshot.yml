@@ -140,7 +140,7 @@ jobs:
       
       - name: Create manifest list and push
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< '${{ steps.meta.outputs.json }}') \
+          docker buildx imagetools create $(echo "${{ steps.meta.outputs.tags }}" | sed 's/^/-t /' | tr '\n' ' ') \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' $(ls -1 /tmp/digests | grep -v "digest"))
       
       - name: Inspect image
