@@ -1,7 +1,9 @@
 package config
 
 import (
+	"github.com/bootjp/cloudflare-gslb/pkg/gslb"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -381,10 +383,12 @@ func TestNonExistentZoneInConfig(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	if len(config.CloudflareZoneIDs) != 1 {
-		t.Errorf("Expected 1 zone ID, got %d", len(config.CloudflareZoneIDs))
+	// Now verify that service initialization rejects the invalid origin
+	_, err = gslb.NewService(config)
+	if err == nil {
+		t.Fatal("Expected NewService to error on non-existent zone reference, got nil")
 	}
-	if len(config.Origins) != 2 {
-		t.Errorf("Expected 2 origins, got %d", len(config.Origins))
+	if !strings.Contains(err.Error(), "zone name non-existent-zone not found") {
+		t.Errorf("Unexpected error message: %v", err)
 	}
 }
