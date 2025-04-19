@@ -159,6 +159,7 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 
 	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
 
+	s.originStatusMutex.Lock()
 	if _, exists := s.originStatus[originKey]; !exists {
 		initialUsingPriority := len(origin.PriorityFailoverIPs) > 0
 		log.Printf("Initializing state for %s: initialUsingPriority=%t (will be verified on first check)",
@@ -169,6 +170,7 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 			HealthyPriority: true,
 		}
 	}
+	s.originStatusMutex.Unlock()
 
 	for {
 		select {
@@ -373,6 +375,10 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 	s.originStatusMutex.Unlock()
 
 	newIP := origin.FailoverIPs[0]
+
+	if err := s.validateIPType(origin.RecordType, newIP); err != nil {
+		return err
+	}
 
 	s.failoverMutex.Lock()
 	s.failoverIndices[originKey] = 0
