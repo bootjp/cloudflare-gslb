@@ -89,7 +89,6 @@ func (h *HttpChecker) Check(ip string) error {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: h.InsecureSkipVerify,
-				MinVersion:         tls.VersionTLS13,
 				ServerName:         h.Host, // proper SNI for certificate validation
 			},
 		}
