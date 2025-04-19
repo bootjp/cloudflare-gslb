@@ -13,6 +13,7 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - Custom failover IP address list configuration
 - Cloudflare proxy settings for each origin
 - One-shot mode for batch health checks via CLI or Docker container
+- **Multiple zone support** - Monitor and manage DNS records across multiple Cloudflare zones
 
 ## Installation
 
@@ -35,16 +36,26 @@ Example configuration file:
 ```json
 {
   "cloudflare_api_token": "YOUR_CLOUDFLARE_API_TOKEN",
-  "cloudflare_zone_id": "YOUR_CLOUDFLARE_ZONE_ID",
   "check_interval_seconds": 60,
+  "cloudflare_zones": [
+    {
+      "zone_id": "YOUR_CLOUDFLARE_ZONE_ID_1",
+      "name": "example.com"
+    },
+    {
+      "zone_id": "YOUR_CLOUDFLARE_ZONE_ID_2",
+      "name": "example.org"
+    }
+  ],
   "origins": [
     {
-      "name": "example.com",
+      "name": "www",
+      "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
         "type": "https",
         "endpoint": "/health",
-        "host": "example.com",
+        "host": "www.example.com",
         "timeout": 5
       },
       "priority_failover_ips": [
@@ -59,7 +70,8 @@ Example configuration file:
       "return_to_priority": true
     },
     {
-      "name": "api.example.com",
+      "name": "api",
+      "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
         "type": "http",
@@ -78,7 +90,8 @@ Example configuration file:
       "return_to_priority": true
     },
     {
-      "name": "ipv6.example.com",
+      "name": "ipv6",
+      "zone_name": "example.org",
       "record_type": "AAAA",
       "health_check": {
         "type": "icmp",
@@ -102,29 +115,41 @@ Example configuration file:
 ### Configuration Options
 
 - `cloudflare_api_token`: Cloudflare API token
-- `cloudflare_zone_id`: Target zone ID
 - `check_interval_seconds`: Health check interval (in seconds)
-- `origins`: Configuration for origins to monitor
-  - `name`: DNS record name
-  - `record_type`: Record type ("A" or "AAAA")
+- `cloudflare_zones`: Array of Cloudflare zones to manage
+  - `zone_id`: Cloudflare zone ID
+  - `name`: A name to identify this zone (used in `zone_name` field of origins)
+- `origins`: Array of origin configurations
+  - `name`: DNS record name (without the zone part)
+  - `zone_name`: The name of the zone this record belongs to (must match one of the names in `cloudflare_zones`)
+  - `record_type`: DNS record type (`A` or `AAAA`)
   - `health_check`: Health check configuration
-    - `type`: Check type ("http", "https", "icmp")
-    - `endpoint`: Path for HTTPS/HTTP (e.g., "/health")
-    - `host`: Hostname for HTTPS/HTTP (e.g., "example.com")
-    - `timeout`: Timeout (in seconds)
-    - `insecure_skip_verify`: Skip SSL verification for HTTPS (optional, default is false)
-  - `priority_failover_ips`: List of priority failover IP addresses
-    - These IPs are used normally and switch to regular failover IPs only when failures occur
-    - Typically used for fixed-cost servers that you want to use consistently
-  - `failover_ips`: List of failover IP addresses
-    - When configured, IPs from this list are used in sequence if health checks fail
-    - If not configured, an IP with the last octet (IPv4) or segment (IPv6) incremented by 1 is used
-  - `proxied`: Whether to enable Cloudflare's proxy feature (optional, default is false)
-    - `true`: Enable Cloudflare proxy when updating DNS records
-    - `false`: Disable proxy, allowing direct access to IP addresses
-  - `return_to_priority`: Whether to automatically return to priority IP when it recovers (optional, default is false)
-    - `true`: Automatically returns to the priority IP when it becomes healthy
-    - `false`: Once failover occurs, it won't return to the priority IP until manually reset
+    - `type`: Health check type (`http`, `https`, or `icmp`)
+    - `endpoint`: HTTP/HTTPS endpoint path
+    - `host`: HTTP/HTTPS host header
+    - `timeout`: Health check timeout in seconds
+    - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
+  - `priority_failover_ips`: Primary IP addresses to use when healthy
+  - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
+  - `proxied`: Whether to enable Cloudflare proxy for this record
+  - `return_to_priority`: Whether to return to priority IPs when they become healthy again
+
+### Backward Compatibility
+
+For backward compatibility, you can still use the old configuration format with a single zone:
+
+```json
+{
+  "cloudflare_api_token": "YOUR_CLOUDFLARE_API_TOKEN",
+  "cloudflare_zone_id": "YOUR_CLOUDFLARE_ZONE_ID",
+  "check_interval_seconds": 60,
+  "origins": [
+    ...
+  ]
+}
+```
+
+When using the old format, all origins will be associated with the single zone specified by `cloudflare_zone_id`.
 
 ### Failover IP List Behavior
 

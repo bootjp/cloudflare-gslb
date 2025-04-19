@@ -1,15 +1,25 @@
 {
   "cloudflare_api_token": "YOUR_CLOUDFLARE_API_TOKEN",
-  "cloudflare_zone_id": "YOUR_CLOUDFLARE_ZONE_ID",
   "check_interval_seconds": 60,
+  "cloudflare_zones": [
+    {
+      "zone_id": "YOUR_CLOUDFLARE_ZONE_ID_1",
+      "name": "example.com"
+    },
+    {
+      "zone_id": "YOUR_CLOUDFLARE_ZONE_ID_2",
+      "name": "example.org"
+    }
+  ],
   "origins": [
     {
-      "name": "example.com",
+      "name": "www",
+      "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
         "type": "https",
         "endpoint": "/health",
-        "host": "example.com",
+        "host": "www.example.com",
         "timeout": 5
       },
       "priority_failover_ips": [
@@ -24,7 +34,8 @@
       "return_to_priority": true
     },
     {
-      "name": "api.example.com",
+      "name": "api",
+      "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
         "type": "http",
@@ -43,7 +54,8 @@
       "return_to_priority": true
     },
     {
-      "name": "ipv6.example.com",
+      "name": "ipv6",
+      "zone_name": "example.org",
       "record_type": "AAAA",
       "health_check": {
         "type": "icmp",
