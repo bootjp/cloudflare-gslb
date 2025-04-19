@@ -16,11 +16,12 @@ import (
 )
 
 var (
-	ErrNoFailoverIPs         = errors.New("no failover IPs configured")
-	ErrInvalidIPAddress      = errors.New("invalid IP address")
-	ErrInvalidIPv4Address    = errors.New("not a valid IPv4 address for A record")
-	ErrInvalidIPv6Address    = errors.New("not a valid IPv6 address for AAAA record")
-	ErrUnsupportedRecordType = errors.New("unsupported record type")
+	ErrNoFailoverIPs          = errors.New("no failover IPs configured")
+	ErrInvalidIPAddress       = errors.New("invalid IP address")
+	ErrInvalidIPv4Address     = errors.New("not a valid IPv4 address for A record")
+	ErrInvalidIPv6Address     = errors.New("not a valid IPv6 address for AAAA record")
+	ErrUnsupportedRecordType  = errors.New("unsupported record type")
+	ErrNoCloudflareZoneConfig = errors.New("no cloudflare zone configured")
 )
 
 type OriginStatus struct {
@@ -55,7 +56,7 @@ type Service struct {
 
 func NewService(cfg *config.Config) (*Service, error) {
 	if len(cfg.CloudflareZoneIDs) == 0 {
-		return nil, ErrNoFailoverIPs
+		return nil, ErrNoCloudflareZoneConfig
 	}
 
 	var defaultClient cloudflare.DNSClientInterface
@@ -489,11 +490,7 @@ func (s *Service) RunOneShot(ctx context.Context) error {
 
 	var multiErr error
 	for err := range errCh {
-		if multiErr == nil {
-			multiErr = err
-		} else {
-			multiErr = fmt.Errorf("%w; %w", multiErr, err)
-		}
+		multiErr = errors.Join(multiErr, err)
 	}
 
 	if multiErr != nil {
