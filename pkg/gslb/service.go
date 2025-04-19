@@ -54,19 +54,21 @@ type Service struct {
 }
 
 func NewService(cfg *config.Config) (*Service, error) {
-	var defaultClient cloudflare.DNSClientInterface
-	if len(cfg.CloudflareZoneIDs) > 0 {
-		client, err := cloudflare.NewDNSClient(
-			cfg.CloudflareAPIToken,
-			cfg.CloudflareZoneIDs[0].ZoneID,
-			false,
-			60,
-		)
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		defaultClient = client
+	if len(cfg.CloudflareZoneIDs) == 0 {
+		return nil, ErrNoFailoverIPs
 	}
+
+	var defaultClient cloudflare.DNSClientInterface
+	client, err := cloudflare.NewDNSClient(
+		cfg.CloudflareAPIToken,
+		cfg.CloudflareZoneIDs[0].ZoneID,
+		false,
+		60,
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defaultClient = client
 
 	zoneMap := make(map[string]string)
 	zoneIDMap := make(map[string]string)
