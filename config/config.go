@@ -9,14 +9,21 @@ import (
 // Config はアプリケーションの設定を表す構造体
 type Config struct {
 	CloudflareAPIToken string         `json:"cloudflare_api_token"`
-	CloudflareZoneID   string         `json:"cloudflare_zone_id"`
+	CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
 	CheckInterval      time.Duration  `json:"check_interval_seconds"`
 	Origins            []OriginConfig `json:"origins"`
+}
+
+// ZoneConfig はCloudflareゾーンの設定を表す構造体
+type ZoneConfig struct {
+	ZoneID string `json:"zone_id"`
+	Name   string `json:"name"`
 }
 
 // OriginConfig はオリジンサーバーの設定を表す構造体
 type OriginConfig struct {
 	Name                string      `json:"name"`
+	ZoneName            string      `json:"zone_name"`   // 対象のゾーン名
 	RecordType          string      `json:"record_type"` // "A" または "AAAA"
 	HealthCheck         HealthCheck `json:"health_check"`
 	PriorityFailoverIPs []string    `json:"priority_failover_ips"` // 優先的に使用するフェイルオーバー用のIPアドレスリスト
@@ -45,6 +52,7 @@ func LoadConfig(path string) (*Config, error) {
 	var tmpConfig struct {
 		CloudflareAPIToken string         `json:"cloudflare_api_token"`
 		CloudflareZoneID   string         `json:"cloudflare_zone_id"`
+		CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
 		CheckInterval      int            `json:"check_interval_seconds"`
 		Origins            []OriginConfig `json:"origins"`
 	}
@@ -54,11 +62,29 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// 設定の初期化
 	config := &Config{
 		CloudflareAPIToken: tmpConfig.CloudflareAPIToken,
-		CloudflareZoneID:   tmpConfig.CloudflareZoneID,
+		CloudflareZoneIDs:  tmpConfig.CloudflareZoneIDs,
 		CheckInterval:      time.Duration(tmpConfig.CheckInterval) * time.Second,
 		Origins:            tmpConfig.Origins,
+	}
+
+	// 後方互換性のために単一のZoneIDから変換
+	if tmpConfig.CloudflareZoneID != "" && len(tmpConfig.CloudflareZoneIDs) == 0 {
+		config.CloudflareZoneIDs = []ZoneConfig{
+			{
+				ZoneID: tmpConfig.CloudflareZoneID,
+				Name:   "default", // デフォルト名
+			},
+		}
+
+		// 各オリジンに対して、ゾーン名が指定されていない場合はデフォルトゾーンを使用
+		for i := range config.Origins {
+			if config.Origins[i].ZoneName == "" {
+				config.Origins[i].ZoneName = "default"
+			}
+		}
 	}
 
 	return config, nil

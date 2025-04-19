@@ -107,3 +107,7 @@ func (m *DNSClientMock) ReplaceRecords(ctx context.Context, name, recordType, ne
 
 	return nil
 }
+
+func (m *DNSClientMock) GetZoneID() string {
+	return "mock-zone-id"
+}
