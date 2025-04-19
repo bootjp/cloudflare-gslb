@@ -374,6 +374,40 @@ func (s *Service) validateIPType(recordType, ipAddress string) error {
 	return nil
 }
 
+func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig) error {
+	checker, err := healthcheck.NewChecker(origin.HealthCheck)
+	if err != nil {
+		return fmt.Errorf("failed to create health checker for %s: %w", origin.Name, err)
+	}
+
+	log.Printf("Checking origin: %s (%s)", origin.Name, origin.RecordType)
+
+	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
+	status := s.getOrInitOriginStatus(originKey)
+
+	dnsClient := s.getDNSClientForOrigin(origin)
+	records, err := dnsClient.GetDNSRecords(ctx, origin.Name, origin.RecordType)
+	if err != nil {
+		return fmt.Errorf("failed to get DNS records for %s: %w", origin.Name, err)
+	}
+
+	if len(records) == 0 {
+		log.Printf("No DNS records found for %s (%s)", origin.Name, origin.RecordType)
+		return nil
+	}
+
+	for _, record := range records {
+		s.processRecord(ctx, origin, record, checker, status)
+	}
+
+	if origin.ReturnToPriority && len(origin.PriorityFailoverIPs) > 0 {
+		log.Printf("ReturnToPriority is enabled, checking priority IPs for %s", origin.Name)
+		s.checkPriorityIPs(ctx, origin, checker)
+	}
+
+	return nil
+}
+
 func (s *Service) RunOneShot(ctx context.Context) error {
 	log.Println("Running one-shot health check for all origins...")
 
@@ -384,38 +418,8 @@ func (s *Service) RunOneShot(ctx context.Context) error {
 		wg.Add(1)
 		go func(o config.OriginConfig) {
 			defer wg.Done()
-
-			checker, err := healthcheck.NewChecker(o.HealthCheck)
-			if err != nil {
-				errCh <- fmt.Errorf("failed to create health checker for %s: %v", o.Name, err)
-				return
-			}
-
-			log.Printf("Checking origin: %s (%s)", o.Name, o.RecordType)
-
-			originKey := fmt.Sprintf("%s-%s-%s", o.ZoneName, o.Name, o.RecordType)
-
-			status := s.getOrInitOriginStatus(originKey)
-
-			dnsClient := s.getDNSClientForOrigin(o)
-			records, err := dnsClient.GetDNSRecords(ctx, o.Name, o.RecordType)
-			if err != nil {
-				errCh <- fmt.Errorf("failed to get DNS records for %s: %v", o.Name, err)
-				return
-			}
-
-			if len(records) == 0 {
-				log.Printf("No DNS records found for %s (%s)", o.Name, o.RecordType)
-				return
-			}
-
-			for _, record := range records {
-				s.processRecord(ctx, o, record, checker, status)
-			}
-
-			if o.ReturnToPriority && len(o.PriorityFailoverIPs) > 0 {
-				log.Printf("ReturnToPriority is enabled, checking priority IPs for %s", o.Name)
-				s.checkPriorityIPs(ctx, o, checker)
+			if err := s.runOriginCheck(ctx, o); err != nil {
+				errCh <- err
 			}
 		}(origin)
 	}
@@ -428,7 +432,7 @@ func (s *Service) RunOneShot(ctx context.Context) error {
 		if multiErr == nil {
 			multiErr = err
 		} else {
-			multiErr = fmt.Errorf("%v; %w", multiErr, err)
+			multiErr = fmt.Errorf("%w; %w", multiErr, err)
 		}
 	}
 

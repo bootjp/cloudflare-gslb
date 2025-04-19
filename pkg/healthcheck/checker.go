@@ -3,9 +3,9 @@ package healthcheck
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -61,28 +61,36 @@ type HttpChecker struct {
 }
 
 func (h *HttpChecker) Check(ip string) error {
-	transport := &http.Transport{}
-
-	if h.Scheme == "https" {
-		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: h.InsecureSkipVerify,
-		}
+	u := &url.URL{
+		Scheme: h.Scheme,
+		Host:   ip,
+		Path:   h.Endpoint,
 	}
+	url := u.String()
 
-	client := &http.Client{
-		Timeout:   h.Timeout,
-		Transport: transport,
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), h.Timeout)
+	defer cancel()
 
-	url := fmt.Sprintf("%s://%s%s", h.Scheme, ip, h.Endpoint)
-	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 
 	if h.Host != "" {
 		req.Host = h.Host
-		req.Header.Set("Host", h.Host)
+	}
+
+	client := &http.Client{}
+
+	// HTTPSの場合はTLS設定を追加
+	if h.Scheme == "https" {
+		// #nosec G402 - InsecureSkipVerifyはユーザー設定に基づいて必要に応じて有効化される
+		// このオプションは自己署名証明書を使用する環境でのヘルスチェックを可能にするために提供されている
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: h.InsecureSkipVerify,
+			},
+		}
 	}
 
 	resp, err := client.Do(req)
@@ -91,7 +99,7 @@ func (h *HttpChecker) Check(ip string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return errors.WithStack(ErrUnexpectedStatusCode)
 	}
 
