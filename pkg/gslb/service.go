@@ -31,16 +31,26 @@ type OriginStatus struct {
 }
 
 type Service struct {
-	config          *config.Config
-	dnsClient       cloudflare.DNSClientInterface
-	checkMutex      sync.Mutex
-	stopCh          chan struct{}
-	wg              sync.WaitGroup
+	config     *config.Config
+	dnsClient  cloudflare.DNSClientInterface
+	checkMutex sync.Mutex
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
+
+	failoverMutex   sync.RWMutex
 	failoverIndices map[string]int
+
+	dnsClientsMutex sync.RWMutex
 	dnsClients      map[string]cloudflare.DNSClientInterface
-	originStatus    map[string]*OriginStatus
-	zoneMap         map[string]string
-	zoneIDMap       map[string]string
+
+	originStatusMutex sync.RWMutex
+	originStatus      map[string]*OriginStatus
+
+	zoneMapMutex sync.RWMutex
+	zoneMap      map[string]string
+
+	zoneIDMapMutex sync.RWMutex
+	zoneIDMap      map[string]string
 }
 
 func NewService(cfg *config.Config) (*Service, error) {
@@ -102,7 +112,11 @@ func NewService(cfg *config.Config) (*Service, error) {
 
 func (s *Service) getDNSClientForOrigin(origin config.OriginConfig) cloudflare.DNSClientInterface {
 	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
+
+	s.dnsClientsMutex.RLock()
 	client, exists := s.dnsClients[originKey]
+	s.dnsClientsMutex.RUnlock()
+
 	if !exists {
 		return s.dnsClient
 	}
@@ -175,7 +189,10 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 
 func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
 	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
+
+	s.originStatusMutex.RLock()
 	status := s.originStatus[originKey]
+	s.originStatusMutex.RUnlock()
 
 	log.Printf("Checking priority IPs for %s, current status: UsingPriority=%t, HealthyPriority=%t, CurrentIP=%s",
 		origin.Name, status.UsingPriority, status.HealthyPriority, status.CurrentIP)
@@ -192,7 +209,10 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		log.Printf("Fixing inconsistent state for %s: UsingPriority=%t but current IP %s is %s a priority IP",
 			origin.Name, status.UsingPriority, status.CurrentIP,
 			map[bool]string{true: "actually", false: "not"}[isPriorityIP])
+
+		s.originStatusMutex.Lock()
 		status.UsingPriority = isPriorityIP
+		s.originStatusMutex.Unlock()
 	}
 
 	if status.UsingPriority {
@@ -212,7 +232,10 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 
 	if allHealthy {
 		log.Printf("Priority IPs for %s are now healthy, switching back", origin.Name)
+
+		s.originStatusMutex.Lock()
 		status.HealthyPriority = true
+		s.originStatusMutex.Unlock()
 
 		// 優先IPに戻すためのDNSレコード更新
 		dnsClient := s.getDNSClientForOrigin(origin)
@@ -224,8 +247,11 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		}
 
 		// 状態を更新
+		s.originStatusMutex.Lock()
 		status.CurrentIP = priorityIP
 		status.UsingPriority = true
+		s.originStatusMutex.Unlock()
+
 		log.Printf("Successfully switched back to priority IP %s for %s", priorityIP, origin.Name)
 	}
 }
@@ -258,29 +284,40 @@ func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, c
 }
 
 func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
+	s.originStatusMutex.RLock()
 	status, exists := s.originStatus[originKey]
+	s.originStatusMutex.RUnlock()
+
 	if !exists {
 		status = &OriginStatus{
 			UsingPriority:   false,
 			HealthyPriority: true,
 		}
+		s.originStatusMutex.Lock()
 		s.originStatus[originKey] = status
+		s.originStatusMutex.Unlock()
 	}
 	return status
 }
 
 func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig, record cf.DNSRecord, checker healthcheck.Checker, status *OriginStatus) {
 	ip := record.Content
+
+	// OriginStatusの更新にはロックが必要
+	s.originStatusMutex.Lock()
 	status.CurrentIP = ip
+	s.originStatusMutex.Unlock()
 
 	err := checker.Check(ip)
 	if err != nil {
 		log.Printf("Health check failed for %s (%s): %v", origin.Name, ip, err)
 
+		s.originStatusMutex.Lock()
 		if status.UsingPriority && len(origin.PriorityFailoverIPs) > 0 {
 			status.HealthyPriority = false
 			status.UsingPriority = false
 		}
+		s.originStatusMutex.Unlock()
 
 		if err := s.replaceUnhealthyRecord(ctx, origin, record); err != nil {
 			log.Printf("Failed to replace unhealthy record for %s: %v", origin.Name, err)
@@ -296,9 +333,11 @@ func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig,
 			}
 		}
 
+		s.originStatusMutex.Lock()
 		status.UsingPriority = isPriorityIP
 		status.CurrentIP = ip
 		status.LastCheck = time.Now()
+		s.originStatusMutex.Unlock()
 	}
 }
 
@@ -307,7 +346,9 @@ func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.Orig
 
 	dnsClient := s.getDNSClientForOrigin(origin)
 
+	s.originStatusMutex.RLock()
 	status := s.originStatus[originKey]
+	s.originStatusMutex.RUnlock()
 
 	if status.UsingPriority && !status.HealthyPriority && len(origin.FailoverIPs) > 0 {
 		return s.switchToPrimaryFailover(ctx, origin, dnsClient, originKey, status)
@@ -325,10 +366,15 @@ func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.Orig
 }
 
 func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.OriginConfig, dnsClient cloudflare.DNSClientInterface, originKey string, status *OriginStatus) error {
+	s.originStatusMutex.Lock()
 	status.UsingPriority = false
+	s.originStatusMutex.Unlock()
 
 	newIP := origin.FailoverIPs[0]
+
+	s.failoverMutex.Lock()
 	s.failoverIndices[originKey] = 0
+	s.failoverMutex.Unlock()
 
 	log.Printf("Switching from priority IP to regular failover IP: %s for %s",
 		newIP, origin.Name)
@@ -336,13 +382,19 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 }
 
 func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord cf.DNSRecord, dnsClient cloudflare.DNSClientInterface, originKey string) error {
+	s.failoverMutex.RLock()
 	currentIndex, exists := s.failoverIndices[originKey]
+	s.failoverMutex.RUnlock()
+
 	if !exists {
 		currentIndex = 0
 	}
 
 	nextIndex := (currentIndex + 1) % len(origin.FailoverIPs)
+
+	s.failoverMutex.Lock()
 	s.failoverIndices[originKey] = nextIndex
+	s.failoverMutex.Unlock()
 
 	newIP := origin.FailoverIPs[nextIndex]
 
