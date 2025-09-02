@@ -16,7 +16,7 @@ COPY . .
 
 RUN go build -o bin/cloudflare-gslb ./cmd/gslb/main.go
 
-FROM debian:latest
+FROM debian:stable-slim
 
 WORKDIR /app
 
