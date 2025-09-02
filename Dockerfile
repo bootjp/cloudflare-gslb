@@ -20,7 +20,7 @@ FROM debian:latest
 
 WORKDIR /app
 
-RUN apt install -y tzdata
+RUN apt install -y ca-certificates tzdata
 
 # Copy the binary from builder
 COPY --from=builder /app/bin/cloudflare-gslb /app/cloudflare-gslb
