@@ -29,10 +29,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the binary from builder
 COPY --from=builder /app/bin/cloudflare-gslb /app/cloudflare-gslb
 
-# on debian, add a non-root user
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
-
-USER appuser
-
 # Set the command to run the binary
 CMD ["/app/cloudflare-gslb"]

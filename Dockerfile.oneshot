@@ -29,20 +29,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the binaries from builder
-COPY --from=builder /app/bin/cloudflare-gslb /app/cloudflare-gslb
 COPY --from=builder /app/bin/cloudflare-gslb-oneshot /app/cloudflare-gslb-oneshot
-
-# Add a non-root user
-RUN groupadd --system appgroup && useradd --system --gid appgroup appuser
-
-# Create directory for config and set permissions
-RUN mkdir -p /app/config && chown -R appuser:appgroup /app
-
-USER appuser
 
 # Set the working directory where the config file will be mounted
 WORKDIR /app/config
 
 # Default entrypoint will be the oneshot binary
 ENTRYPOINT ["/app/cloudflare-gslb-oneshot"]
-CMD ["-config", "/app/config/config.json"] 
+CMD ["-config", "/app/config/config.json"]
