@@ -4,22 +4,25 @@ import (
 	"context"
 	"time"
 
-	cf "github.com/cloudflare/cloudflare-go"
+	cf "github.com/cloudflare/cloudflare-go/v6"
+	"github.com/cloudflare/cloudflare-go/v6/dns"
+	"github.com/cloudflare/cloudflare-go/v6/option"
+	"github.com/cloudflare/cloudflare-go/v6/packages/pagination"
 	"github.com/cockroachdb/errors"
 )
 
 type cloudflareAPI interface {
-	CreateDNSRecord(ctx context.Context, rc *cf.ResourceContainer, params cf.CreateDNSRecordParams) (cf.DNSRecord, error)
-	DeleteDNSRecord(ctx context.Context, rc *cf.ResourceContainer, recordID string) error
-	ListDNSRecords(ctx context.Context, rc *cf.ResourceContainer, params cf.ListDNSRecordsParams) ([]cf.DNSRecord, *cf.ResultInfo, error)
-	UpdateDNSRecord(ctx context.Context, rc *cf.ResourceContainer, params cf.UpdateDNSRecordParams) (cf.DNSRecord, error)
+	New(ctx context.Context, params dns.RecordNewParams, opts ...option.RequestOption) (*dns.RecordResponse, error)
+	Delete(ctx context.Context, dnsRecordID string, body dns.RecordDeleteParams, opts ...option.RequestOption) (*dns.RecordDeleteResponse, error)
+	List(ctx context.Context, params dns.RecordListParams, opts ...option.RequestOption) (*pagination.V4PagePaginationArray[dns.RecordResponse], error)
+	Update(ctx context.Context, dnsRecordID string, params dns.RecordUpdateParams, opts ...option.RequestOption) (*dns.RecordResponse, error)
 }
 
 type DNSClientInterface interface {
-	GetDNSRecords(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error)
+	GetDNSRecords(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error)
 	DeleteDNSRecord(ctx context.Context, recordID string) error
-	CreateDNSRecord(ctx context.Context, name, recordType, content string) (cf.DNSRecord, error)
-	UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (cf.DNSRecord, error)
+	CreateDNSRecord(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
+	UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
 	ReplaceRecords(ctx context.Context, name, recordType, newContent string) error
 	GetZoneID() string
 }
@@ -33,13 +36,12 @@ type DNSClient struct {
 }
 
 func NewDNSClient(apiToken, zoneID string, proxied bool, ttl int) (*DNSClient, error) {
-	api, err := cf.NewWithAPIToken(apiToken)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
+	client := cf.NewClient(
+		option.WithAPIToken(apiToken),
+	)
 
 	return &DNSClient{
-		api:     api,
+		api:     client.DNS.Records,
 		zoneID:  zoneID,
 		proxied: proxied,
 		ttl:     ttl,
@@ -50,63 +52,119 @@ func (c *DNSClient) GetZoneID() string {
 	return c.zoneID
 }
 
-func (c *DNSClient) GetDNSRecords(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error) {
-	params := cf.ListDNSRecordsParams{
-		Name: name,
-		Type: recordType,
+func (c *DNSClient) GetDNSRecords(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error) {
+	params := dns.RecordListParams{
+		ZoneID: cf.F(c.zoneID),
+		Name: cf.F(dns.RecordListParamsName{
+			Exact: cf.F(name),
+		}),
+		Type: cf.F(dns.RecordListParamsType(recordType)),
 	}
 
-	records, _, err := c.api.ListDNSRecords(ctx, cf.ZoneIdentifier(c.zoneID), params)
+	result, err := c.api.List(ctx, params)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	return records, nil
+	return result.Result, nil
 }
 
 func (c *DNSClient) DeleteDNSRecord(ctx context.Context, recordID string) error {
-	err := c.api.DeleteDNSRecord(ctx, cf.ZoneIdentifier(c.zoneID), recordID)
+	_, err := c.api.Delete(ctx, recordID, dns.RecordDeleteParams{
+		ZoneID: cf.F(c.zoneID),
+	})
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-func (c *DNSClient) CreateDNSRecord(ctx context.Context, name, recordType, content string) (cf.DNSRecord, error) {
-	params := cf.CreateDNSRecordParams{
-		Type:     recordType,
-		Name:     name,
-		Content:  content,
-		TTL:      c.ttl,
-		Proxied:  &c.proxied,
-		Priority: &c.priority,
+func (c *DNSClient) CreateDNSRecord(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error) {
+	// Build the record data based on type
+	var body dns.RecordNewParamsBodyUnion
+	switch recordType {
+	case "A":
+		body = dns.ARecordParam{
+			Type:    cf.F(dns.ARecordTypeA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
+	case "AAAA":
+		body = dns.AAAARecordParam{
+			Type:    cf.F(dns.AAAARecordTypeAAAA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
+	default:
+		// For other record types, use A record as fallback
+		body = dns.ARecordParam{
+			Type:    cf.F(dns.ARecordTypeA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
 	}
 
-	record, err := c.api.CreateDNSRecord(ctx, cf.ZoneIdentifier(c.zoneID), params)
+	params := dns.RecordNewParams{
+		ZoneID: cf.F(c.zoneID),
+		Body:   body,
+	}
+
+	record, err := c.api.New(ctx, params)
 	if err != nil {
-		return cf.DNSRecord{}, errors.WithStack(err)
+		return dns.RecordResponse{}, errors.WithStack(err)
 	}
 
-	return record, nil
+	return *record, nil
 }
 
-func (c *DNSClient) UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (cf.DNSRecord, error) {
-	params := cf.UpdateDNSRecordParams{
-		ID:       recordID,
-		Type:     recordType,
-		Name:     name,
-		Content:  content,
-		TTL:      c.ttl,
-		Proxied:  &c.proxied,
-		Priority: &c.priority,
+func (c *DNSClient) UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error) {
+	// Build the record data based on type
+	var body dns.RecordUpdateParamsBodyUnion
+	switch recordType {
+	case "A":
+		body = dns.ARecordParam{
+			Type:    cf.F(dns.ARecordTypeA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
+	case "AAAA":
+		body = dns.AAAARecordParam{
+			Type:    cf.F(dns.AAAARecordTypeAAAA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
+	default:
+		// For other record types, use A record as fallback
+		body = dns.ARecordParam{
+			Type:    cf.F(dns.ARecordTypeA),
+			Name:    cf.F(name),
+			Content: cf.F(content),
+			TTL:     cf.F(dns.TTL(c.ttl)),
+			Proxied: cf.F(c.proxied),
+		}
 	}
 
-	record, err := c.api.UpdateDNSRecord(ctx, cf.ZoneIdentifier(c.zoneID), params)
+	params := dns.RecordUpdateParams{
+		ZoneID: cf.F(c.zoneID),
+		Body:   body,
+	}
+
+	record, err := c.api.Update(ctx, recordID, params)
 	if err != nil {
-		return cf.DNSRecord{}, errors.WithStack(err)
+		return dns.RecordResponse{}, errors.WithStack(err)
 	}
 
-	return record, nil
+	return *record, nil
 }
 
 func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newContent string) error {

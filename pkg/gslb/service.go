@@ -11,7 +11,7 @@ import (
 	"github.com/bootjp/cloudflare-gslb/config"
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
 	"github.com/bootjp/cloudflare-gslb/pkg/healthcheck"
-	cf "github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare/cloudflare-go/v6/dns"
 	"github.com/cockroachdb/errors"
 )
 
@@ -305,7 +305,7 @@ func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
 	return status
 }
 
-func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig, record cf.DNSRecord, checker healthcheck.Checker, status *OriginStatus) {
+func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig, record dns.RecordResponse, checker healthcheck.Checker, status *OriginStatus) {
 	ip := record.Content
 
 	// OriginStatusの更新にはロックが必要
@@ -346,7 +346,7 @@ func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig,
 	}
 }
 
-func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.OriginConfig, unhealthyRecord cf.DNSRecord) error {
+func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse) error {
 	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
 
 	dnsClient := s.getDNSClientForOrigin(origin)
@@ -390,7 +390,7 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 	return dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP)
 }
 
-func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord cf.DNSRecord, dnsClient cloudflare.DNSClientInterface, originKey string) error {
+func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse, dnsClient cloudflare.DNSClientInterface, originKey string) error {
 	s.failoverMutex.RLock()
 	currentIndex, exists := s.failoverIndices[originKey]
 	s.failoverMutex.RUnlock()
