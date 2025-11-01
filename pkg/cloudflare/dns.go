@@ -8,6 +8,13 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
+type cloudflareAPI interface {
+	CreateDNSRecord(ctx context.Context, rc *cf.ResourceContainer, params cf.CreateDNSRecordParams) (cf.DNSRecord, error)
+	DeleteDNSRecord(ctx context.Context, rc *cf.ResourceContainer, recordID string) error
+	ListDNSRecords(ctx context.Context, rc *cf.ResourceContainer, params cf.ListDNSRecordsParams) ([]cf.DNSRecord, *cf.ResultInfo, error)
+	UpdateDNSRecord(ctx context.Context, rc *cf.ResourceContainer, params cf.UpdateDNSRecordParams) (cf.DNSRecord, error)
+}
+
 type DNSClientInterface interface {
 	GetDNSRecords(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error)
 	DeleteDNSRecord(ctx context.Context, recordID string) error
@@ -18,7 +25,7 @@ type DNSClientInterface interface {
 }
 
 type DNSClient struct {
-	api      *cf.API
+	api      cloudflareAPI
 	zoneID   string
 	proxied  bool
 	ttl      int
@@ -108,16 +115,23 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 		return err
 	}
 
-	for _, record := range records {
+	if len(records) == 0 {
+		_, err = c.CreateDNSRecord(ctx, name, recordType, newContent)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if _, err = c.UpdateDNSRecord(ctx, records[0].ID, name, recordType, newContent); err != nil {
+		return err
+	}
+
+	for _, record := range records[1:] {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
 			return err
 		}
 		time.Sleep(500 * time.Millisecond)
-	}
-
-	_, err = c.CreateDNSRecord(ctx, name, recordType, newContent)
-	if err != nil {
-		return err
 	}
 
 	return nil
