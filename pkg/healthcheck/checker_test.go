@@ -132,6 +132,40 @@ func TestHttpChecker_Check(t *testing.T) {
 	}
 }
 
+func TestHttpChecker_CheckWithHeaders(t *testing.T) {
+	headerCh := make(chan string, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headerCh <- r.Header.Get("X-Test-Header")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	host := server.URL[7:]
+
+	h := &HttpChecker{
+		Endpoint: "/health",
+		Timeout:  5 * time.Second,
+		Scheme:   "http",
+		Headers: map[string]string{
+			"X-Test-Header": "expected-value",
+		},
+	}
+
+	if err := h.Check(host); err != nil {
+		t.Fatalf("HttpChecker.Check() error = %v", err)
+	}
+
+	select {
+	case headerValue := <-headerCh:
+		if headerValue != "expected-value" {
+			t.Errorf("Expected header X-Test-Header = 'expected-value', got '%s'", headerValue)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for header to be received")
+	}
+}
+
 // ICMPのテストは実行環境に依存するため、ここでは省略しています。
 // 実際の環境でテストする場合は、以下のように実装できます。
 /*

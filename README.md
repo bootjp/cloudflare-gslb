@@ -129,6 +129,7 @@ Example configuration file:
     - `host`: HTTP/HTTPS host header
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
+    - `headers`: Additional HTTP headers to include with health check requests
   - `priority_failover_ips`: Primary IP addresses to use when healthy
   - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
   - `proxied`: Whether to enable Cloudflare proxy for this record
