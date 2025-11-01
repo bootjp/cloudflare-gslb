@@ -34,6 +34,7 @@ func NewChecker(hc config.HealthCheck) (Checker, error) {
 			Host:     hc.Host,
 			Timeout:  time.Duration(hc.Timeout) * time.Second,
 			Scheme:   "http",
+			Headers:  hc.Headers,
 		}, nil
 	case "https":
 		return &HttpChecker{
@@ -42,6 +43,7 @@ func NewChecker(hc config.HealthCheck) (Checker, error) {
 			Timeout:            time.Duration(hc.Timeout) * time.Second,
 			Scheme:             "https",
 			InsecureSkipVerify: hc.InsecureSkipVerify,
+			Headers:            hc.Headers,
 		}, nil
 	case "icmp":
 		return &IcmpChecker{
@@ -58,6 +60,7 @@ type HttpChecker struct {
 	Timeout            time.Duration
 	Scheme             string
 	InsecureSkipVerify bool
+	Headers            map[string]string
 }
 
 func (h *HttpChecker) Check(ip string) error {
@@ -78,6 +81,13 @@ func (h *HttpChecker) Check(ip string) error {
 
 	if h.Host != "" {
 		req.Host = h.Host
+	}
+
+	for key, value := range h.Headers {
+		if key == "" {
+			continue
+		}
+		req.Header.Set(key, value)
 	}
 
 	client := &http.Client{}

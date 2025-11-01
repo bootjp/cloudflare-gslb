@@ -19,7 +19,10 @@ func TestLoadConfig(t *testing.T) {
 					"type": "https",
 					"endpoint": "/health",
 					"host": "example.com",
-					"timeout": 5
+					"timeout": 5,
+					"headers": {
+						"X-Test-Header": "header-value"
+					}
 				}
 			},
 			{
@@ -90,6 +93,11 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if config.Origins[0].HealthCheck.Timeout != 5 {
 		t.Errorf("Expected first origin health check timeout = 5, got %d", config.Origins[0].HealthCheck.Timeout)
+	}
+	if config.Origins[0].HealthCheck.Headers == nil {
+		t.Errorf("Expected first origin health check headers to be initialized")
+	} else if headerValue := config.Origins[0].HealthCheck.Headers["X-Test-Header"]; headerValue != "header-value" {
+		t.Errorf("Expected first origin health check header X-Test-Header = 'header-value', got '%s'", headerValue)
 	}
 	if config.Origins[0].ZoneName != "default" {
 		t.Errorf("Expected first origin zone name = 'default', got '%s'", config.Origins[0].ZoneName)

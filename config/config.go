@@ -34,11 +34,12 @@ type OriginConfig struct {
 
 // HealthCheck はヘルスチェックの設定を表す構造体
 type HealthCheck struct {
-	Type               string `json:"type"`                 // "http", "https", "icmp"
-	Endpoint           string `json:"endpoint"`             // HTTPSの場合のパス
-	Host               string `json:"host"`                 // HTTPSの場合のホスト名
-	Timeout            int    `json:"timeout"`              // タイムアウト（秒）
-	InsecureSkipVerify bool   `json:"insecure_skip_verify"` // HTTPSの場合に証明書検証をスキップするかどうか
+	Type               string            `json:"type"`                 // "http", "https", "icmp"
+	Endpoint           string            `json:"endpoint"`             // HTTPSの場合のパス
+	Host               string            `json:"host"`                 // HTTPSの場合のホスト名
+	Timeout            int               `json:"timeout"`              // タイムアウト（秒）
+	InsecureSkipVerify bool              `json:"insecure_skip_verify"` // HTTPSの場合に証明書検証をスキップするかどうか
+	Headers            map[string]string `json:"headers"`              // ヘルスチェックリクエストに追加するHTTPヘッダ
 }
 
 // LoadConfig は設定ファイルを読み込む関数
