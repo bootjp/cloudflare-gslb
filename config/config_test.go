@@ -15,15 +15,15 @@ func TestLoadConfig(t *testing.T) {
 			{
 				"name": "example.com",
 				"record_type": "A",
-                                "health_check": {
-                                        "type": "https",
-                                        "endpoint": "/health",
-                                        "host": "example.com",
-                                        "timeout": 5,
-                                        "headers": {
-                                                "X-Test-Header": "header-value"
-                                        }
-                                }
+				"health_check": {
+					"type": "https",
+					"endpoint": "/health",
+					"host": "example.com",
+					"timeout": 5,
+					"headers": {
+						"X-Test-Header": "header-value"
+					}
+				}
 			},
 			{
 				"name": "api.example.com",
