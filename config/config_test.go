@@ -6,52 +6,42 @@ import (
 	"time"
 )
 
-func TestLoadConfig(t *testing.T) {
-	testConfigContent := `{
-		"cloudflare_api_token": "test-token",
-		"cloudflare_zone_id": "test-zone",
-		"check_interval_seconds": 60,
-		"origins": [
-			{
-				"name": "example.com",
-				"record_type": "A",
-				"health_check": {
-					"type": "https",
-					"endpoint": "/health",
-					"host": "example.com",
-					"timeout": 5
-				}
-			},
-			{
-				"name": "api.example.com",
-				"record_type": "A",
-				"health_check": {
-					"type": "http",
-					"endpoint": "/status",
-					"host": "api.example.com",
-					"timeout": 5
-				}
-			}
-		]
-	}`
+func createTempConfigFile(t *testing.T, pattern, content string) string {
+	t.Helper()
 
-	tmpfile, err := os.CreateTemp("", "config_test_*.json")
+	tmpfile, err := os.CreateTemp("", pattern)
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
 
-	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+	t.Cleanup(func() {
+		os.Remove(tmpfile.Name())
+	})
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
 		t.Fatalf("Failed to write to temp file: %v", err)
 	}
 	if err := tmpfile.Close(); err != nil {
 		t.Fatalf("Failed to close temp file: %v", err)
 	}
 
-	config, err := LoadConfig(tmpfile.Name())
+	return tmpfile.Name()
+}
+
+func loadConfigFromContent(t *testing.T, pattern, content string) *Config {
+	t.Helper()
+
+	path := createTempConfigFile(t, pattern, content)
+	config, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
+
+	return config
+}
+
+func assertSingleZoneConfig(t *testing.T, config *Config) {
+	t.Helper()
 
 	if config.CloudflareAPIToken != "test-token" {
 		t.Errorf("Expected CloudflareAPIToken = 'test-token', got '%s'", config.CloudflareAPIToken)
@@ -109,6 +99,65 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfig(t *testing.T) {
+	testConfigContent := `{
+                "cloudflare_api_token": "test-token",
+                "cloudflare_zone_id": "test-zone",
+                "check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "example.com",
+				"record_type": "A",
+				"health_check": {
+					"type": "https",
+					"endpoint": "/health",
+					"host": "example.com",
+					"timeout": 5
+				}
+			},
+			{
+				"name": "api.example.com",
+				"record_type": "A",
+				"health_check": {
+					"type": "http",
+					"endpoint": "/status",
+					"host": "api.example.com",
+					"timeout": 5
+				}
+			}
+                ]
+        }`
+
+	config := loadConfigFromContent(t, "config_test_*.json", testConfigContent)
+	assertSingleZoneConfig(t, config)
+}
+
+func TestLoadConfigYAML(t *testing.T) {
+	testConfigContent := `
+cloudflare_api_token: test-token
+cloudflare_zone_id: test-zone
+check_interval_seconds: 60
+origins:
+  - name: example.com
+    record_type: A
+    health_check:
+      type: https
+      endpoint: /health
+      host: example.com
+      timeout: 5
+  - name: api.example.com
+    record_type: A
+    health_check:
+      type: http
+      endpoint: /status
+      host: api.example.com
+      timeout: 5
+`
+
+	config := loadConfigFromContent(t, "config_test_*.yaml", testConfigContent)
+	assertSingleZoneConfig(t, config)
+}
+
 func TestLoadConfig_Error(t *testing.T) {
 	_, err := LoadConfig("nonexistent_file.json")
 	if err == nil {
@@ -130,23 +179,12 @@ func TestLoadConfig_Error(t *testing.T) {
 					"timeout": 5
 				}
 			},
-		]
-	}`
+                ]
+        }`
 
-	tmpfile, err := os.CreateTemp("", "invalid_config_*.json")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpfile.Name())
+	path := createTempConfigFile(t, "invalid_config_*.json", invalidJSON)
 
-	if _, err := tmpfile.Write([]byte(invalidJSON)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
-
-	_, err = LoadConfig(tmpfile.Name())
+	_, err = LoadConfig(path)
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for invalid JSON, got nil")
 	}
@@ -154,70 +192,54 @@ func TestLoadConfig_Error(t *testing.T) {
 
 func TestLoadMultiZoneConfig(t *testing.T) {
 	testMultiZoneConfigContent := `{
-		"cloudflare_api_token": "test-token",
-		"check_interval_seconds": 60,
-		"cloudflare_zones": [
-			{
-				"zone_id": "zone-1",
-				"name": "example.com"
-			},
-			{
-				"zone_id": "zone-2",
-				"name": "example.org"
-			}
-		],
-		"origins": [
-			{
-				"name": "www",
-				"zone_name": "example.com",
-				"record_type": "A",
-				"health_check": {
-					"type": "https",
-					"endpoint": "/health",
-					"host": "www.example.com",
-					"timeout": 5
-				}
-			},
-			{
-				"name": "api",
-				"zone_name": "example.com",
-				"record_type": "A",
-				"health_check": {
-					"type": "http",
-					"endpoint": "/status",
-					"host": "api.example.com",
-					"timeout": 5
-				}
-			},
-			{
-				"name": "ipv6",
-				"zone_name": "example.org",
-				"record_type": "AAAA",
-				"health_check": {
-					"type": "icmp",
-					"timeout": 5
-				}
-			}
-		]
-	}`
+                "cloudflare_api_token": "test-token",
+                "check_interval_seconds": 60,
+                "cloudflare_zones": [
+                        {
+                                "zone_id": "zone-1",
+                                "name": "example.com"
+                        },
+                        {
+                                "zone_id": "zone-2",
+                                "name": "example.org"
+                        }
+                ],
+                "origins": [
+                        {
+                                "name": "www",
+                                "zone_name": "example.com",
+                                "record_type": "A",
+                                "health_check": {
+                                        "type": "https",
+                                        "endpoint": "/health",
+                                        "host": "www.example.com",
+                                        "timeout": 5
+                                }
+                        },
+                        {
+                                "name": "api",
+                                "zone_name": "example.com",
+                                "record_type": "A",
+                                "health_check": {
+                                        "type": "http",
+                                        "endpoint": "/status",
+                                        "host": "api.example.com",
+                                        "timeout": 5
+                                }
+                        },
+                        {
+                                "name": "ipv6",
+                                "zone_name": "example.org",
+                                "record_type": "AAAA",
+                                "health_check": {
+                                        "type": "icmp",
+                                        "timeout": 5
+                                }
+                        }
+                ]
+        }`
 
-	tmpfile, err := os.CreateTemp("", "multizone_config_test_*.json")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	if _, err := tmpfile.Write([]byte(testMultiZoneConfigContent)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
-
-	config, err := LoadConfig(tmpfile.Name())
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
+	config := loadConfigFromContent(t, "multizone_config_test_*.json", testMultiZoneConfigContent)
 
 	if config.CloudflareAPIToken != "test-token" {
 		t.Errorf("Expected CloudflareAPIToken = 'test-token', got '%s'", config.CloudflareAPIToken)
@@ -277,6 +299,73 @@ func TestLoadMultiZoneConfig(t *testing.T) {
 	}
 }
 
+func TestLoadMultiZoneConfigYAML(t *testing.T) {
+	testConfigContent := `
+cloudflare_api_token: test-token
+check_interval_seconds: 120
+cloudflare_zones:
+  - zone_id: zone-1
+    name: example.com
+  - zone_id: zone-2
+    name: example.org
+origins:
+  - name: www
+    zone_name: example.com
+    record_type: A
+    health_check:
+      type: https
+      endpoint: /health
+      host: www.example.com
+      timeout: 5
+    priority_failover_ips:
+      - 192.0.2.1
+      - 192.0.2.2
+    proxied: true
+  - name: api
+    zone_name: example.org
+    record_type: AAAA
+    health_check:
+      type: http
+      endpoint: /status
+      host: api.example.org
+      timeout: 10
+    failover_ips:
+      - 2001:db8::1
+      - 2001:db8::2
+    return_to_priority: true
+`
+
+	config := loadConfigFromContent(t, "multizone_config_test_*.yaml", testConfigContent)
+
+	if len(config.CloudflareZoneIDs) != 2 {
+		t.Fatalf("Expected 2 zones, got %d", len(config.CloudflareZoneIDs))
+	}
+	if config.CloudflareZoneIDs[0].ZoneID != "zone-1" {
+		t.Errorf("Expected first zone ID = 'zone-1', got '%s'", config.CloudflareZoneIDs[0].ZoneID)
+	}
+	if config.CloudflareZoneIDs[1].Name != "example.org" {
+		t.Errorf("Expected second zone name = 'example.org', got '%s'", config.CloudflareZoneIDs[1].Name)
+	}
+
+	if len(config.Origins) != 2 {
+		t.Fatalf("Expected 2 origins, got %d", len(config.Origins))
+	}
+
+	if len(config.Origins[0].PriorityFailoverIPs) != 2 {
+		t.Errorf("Expected first origin PriorityFailoverIPs length = 2, got %d", len(config.Origins[0].PriorityFailoverIPs))
+	}
+	if !config.Origins[0].Proxied {
+		t.Errorf("Expected first origin Proxied to be true")
+	}
+
+	if len(config.Origins[1].FailoverIPs) != 2 {
+		t.Errorf("Expected second origin FailoverIPs length = 2, got %d", len(config.Origins[1].FailoverIPs))
+	}
+	if !config.Origins[1].ReturnToPriority {
+		t.Errorf("Expected second origin ReturnToPriority to be true")
+	}
+}
+
 func TestInvalidConfig(t *testing.T) {
 	// 不正なJSONを含む設定ファイル（終わりの括弧が足りない）
 	invalidJSON := `{
@@ -307,21 +396,10 @@ func TestInvalidConfig(t *testing.T) {
 		]
 	` // 終わりの括弧が足りない
 
-	tmpfile, err := os.CreateTemp("", "invalid_config_*.json")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	if _, err := tmpfile.Write([]byte(invalidJSON)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
+	path := createTempConfigFile(t, "invalid_config_*.json", invalidJSON)
 
 	// 不正なJSONファイルを読み込む
-	_, err = LoadConfig(tmpfile.Name())
+	_, err := LoadConfig(path)
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for invalid JSON, got nil")
 	}
@@ -360,26 +438,10 @@ func TestNonExistentZoneInConfig(t *testing.T) {
 					"timeout": 5
 				}
 			}
-		]
-	}`
+                ]
+        }`
 
-	tmpfile, err := os.CreateTemp("", "invalid_zone_config_test_*.json")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	if _, err := tmpfile.Write([]byte(invalidZoneConfigContent)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
-
-	config, err := LoadConfig(tmpfile.Name())
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
+	config := loadConfigFromContent(t, "invalid_zone_config_test_*.json", invalidZoneConfigContent)
 
 	if len(config.CloudflareZoneIDs) != 1 {
 		t.Errorf("Expected 1 zone ID, got %d", len(config.CloudflareZoneIDs))
