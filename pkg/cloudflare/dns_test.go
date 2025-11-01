@@ -228,3 +228,318 @@ func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
 		t.Fatalf("expected no create calls on error, got %d", len(api.createCalls))
 	}
 }
+
+// TestDNSClientGetDNSRecords tests the GetDNSRecords method
+func TestDNSClientGetDNSRecords(t *testing.T) {
+tests := []struct {
+name        string
+recordName  string
+recordType  string
+mockRecords []dns.RecordResponse
+mockErr     error
+wantErr     bool
+wantCount   int
+}{
+{
+name:       "successfully get records",
+recordName: "example.com",
+recordType: "A",
+mockRecords: []dns.RecordResponse{
+{
+ID:      "record-1",
+Name:    "example.com",
+Type:    dns.RecordResponseTypeA,
+Content: "192.168.1.1",
+},
+},
+wantErr:   false,
+wantCount: 1,
+},
+{
+name:        "no records found",
+recordName:  "nonexistent.com",
+recordType:  "A",
+mockRecords: []dns.RecordResponse{},
+wantErr:     false,
+wantCount:   0,
+},
+{
+name:        "API error",
+recordName:  "example.com",
+recordType:  "A",
+mockRecords: nil,
+mockErr:     crerrors.New("API error"),
+wantErr:     true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+api := &fakeCloudflareAPI{
+listResp: tt.mockRecords,
+listErr:  tt.mockErr,
+}
+client := &DNSClient{
+api:    api,
+zoneID: "test-zone",
+}
+
+records, err := client.GetDNSRecords(context.Background(), tt.recordName, tt.recordType)
+
+if (err != nil) != tt.wantErr {
+t.Errorf("GetDNSRecords() error = %v, wantErr %v", err, tt.wantErr)
+return
+}
+
+if !tt.wantErr && len(records) != tt.wantCount {
+t.Errorf("GetDNSRecords() returned %d records, want %d", len(records), tt.wantCount)
+}
+})
+}
+}
+
+// TestDNSClientDeleteDNSRecord tests the DeleteDNSRecord method
+func TestDNSClientDeleteDNSRecord(t *testing.T) {
+tests := []struct {
+name     string
+recordID string
+mockErr  error
+wantErr  bool
+}{
+{
+name:     "successfully delete record",
+recordID: "record-1",
+wantErr:  false,
+},
+{
+name:     "API error",
+recordID: "record-1",
+mockErr:  crerrors.New("API error"),
+wantErr:  true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+api := &fakeCloudflareAPI{
+deleteErr: tt.mockErr,
+}
+client := &DNSClient{
+api:    api,
+zoneID: "test-zone",
+}
+
+err := client.DeleteDNSRecord(context.Background(), tt.recordID)
+
+if (err != nil) != tt.wantErr {
+t.Errorf("DeleteDNSRecord() error = %v, wantErr %v", err, tt.wantErr)
+}
+
+if !tt.wantErr && len(api.deleteCalls) != 1 {
+t.Errorf("DeleteDNSRecord() called %d times, want 1", len(api.deleteCalls))
+}
+
+if !tt.wantErr && api.deleteCalls[0] != tt.recordID {
+t.Errorf("DeleteDNSRecord() called with recordID %s, want %s", api.deleteCalls[0], tt.recordID)
+}
+})
+}
+}
+
+// TestDNSClientCreateDNSRecord tests the CreateDNSRecord method
+func TestDNSClientCreateDNSRecord(t *testing.T) {
+tests := []struct {
+name       string
+recordName string
+recordType string
+content    string
+mockErr    error
+wantErr    bool
+}{
+{
+name:       "create A record",
+recordName: "example.com",
+recordType: "A",
+content:    "192.168.1.1",
+wantErr:    false,
+},
+{
+name:       "create AAAA record",
+recordName: "example.com",
+recordType: "AAAA",
+content:    "2001:db8::1",
+wantErr:    false,
+},
+{
+name:       "API error",
+recordName: "example.com",
+recordType: "A",
+content:    "192.168.1.1",
+mockErr:    crerrors.New("API error"),
+wantErr:    true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+api := &fakeCloudflareAPI{
+createErr: tt.mockErr,
+}
+client := &DNSClient{
+api:     api,
+zoneID:  "test-zone",
+proxied: false,
+ttl:     300,
+}
+
+record, err := client.CreateDNSRecord(context.Background(), tt.recordName, tt.recordType, tt.content)
+
+if (err != nil) != tt.wantErr {
+t.Errorf("CreateDNSRecord() error = %v, wantErr %v", err, tt.wantErr)
+return
+}
+
+if !tt.wantErr {
+if len(api.createCalls) != 1 {
+t.Errorf("CreateDNSRecord() called %d times, want 1", len(api.createCalls))
+}
+
+if record.ID == "" {
+t.Error("CreateDNSRecord() returned empty ID")
+}
+}
+})
+}
+}
+
+// TestDNSClientUpdateDNSRecord tests the UpdateDNSRecord method
+func TestDNSClientUpdateDNSRecord(t *testing.T) {
+tests := []struct {
+name       string
+recordID   string
+recordName string
+recordType string
+content    string
+mockErr    error
+wantErr    bool
+}{
+{
+name:       "update A record",
+recordID:   "record-1",
+recordName: "example.com",
+recordType: "A",
+content:    "192.168.1.2",
+wantErr:    false,
+},
+{
+name:       "update AAAA record",
+recordID:   "record-2",
+recordName: "example.com",
+recordType: "AAAA",
+content:    "2001:db8::2",
+wantErr:    false,
+},
+{
+name:       "API error",
+recordID:   "record-1",
+recordName: "example.com",
+recordType: "A",
+content:    "192.168.1.2",
+mockErr:    crerrors.New("API error"),
+wantErr:    true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+api := &fakeCloudflareAPI{
+updateErr: tt.mockErr,
+}
+client := &DNSClient{
+api:     api,
+zoneID:  "test-zone",
+proxied: true,
+ttl:     120,
+}
+
+record, err := client.UpdateDNSRecord(context.Background(), tt.recordID, tt.recordName, tt.recordType, tt.content)
+
+if (err != nil) != tt.wantErr {
+t.Errorf("UpdateDNSRecord() error = %v, wantErr %v", err, tt.wantErr)
+return
+}
+
+if !tt.wantErr {
+if len(api.updateCalls) != 1 {
+t.Errorf("UpdateDNSRecord() called %d times, want 1", len(api.updateCalls))
+}
+
+if record.ID != tt.recordID {
+t.Errorf("UpdateDNSRecord() returned ID %s, want %s", record.ID, tt.recordID)
+}
+}
+})
+}
+}
+
+// TestDNSClientCreateError tests error handling in CreateDNSRecord
+func TestDNSClientCreateError(t *testing.T) {
+expectedErr := crerrors.New("create failed")
+api := &fakeCloudflareAPI{
+createErr: expectedErr,
+}
+client := &DNSClient{
+api:     api,
+zoneID:  "zone",
+proxied: false,
+ttl:     100,
+}
+
+_, err := client.CreateDNSRecord(context.Background(), "example.com", "A", "192.168.1.1")
+if err == nil {
+t.Fatal("expected error but got nil")
+}
+if !crerrors.Is(err, expectedErr) {
+t.Fatalf("expected error %v, got %v", expectedErr, err)
+}
+}
+
+// TestDNSClientDeleteError tests error handling in DeleteDNSRecord
+func TestDNSClientDeleteError(t *testing.T) {
+expectedErr := crerrors.New("delete failed")
+api := &fakeCloudflareAPI{
+deleteErr: expectedErr,
+}
+client := &DNSClient{
+api:    api,
+zoneID: "zone",
+}
+
+err := client.DeleteDNSRecord(context.Background(), "record-1")
+if err == nil {
+t.Fatal("expected error but got nil")
+}
+if !crerrors.Is(err, expectedErr) {
+t.Fatalf("expected error %v, got %v", expectedErr, err)
+}
+}
+
+// TestDNSClientListError tests error handling in GetDNSRecords
+func TestDNSClientListError(t *testing.T) {
+expectedErr := crerrors.New("list failed")
+api := &fakeCloudflareAPI{
+listErr: expectedErr,
+}
+client := &DNSClient{
+api:    api,
+zoneID: "zone",
+}
+
+_, err := client.GetDNSRecords(context.Background(), "example.com", "A")
+if err == nil {
+t.Fatal("expected error but got nil")
+}
+if !crerrors.Is(err, expectedErr) {
+t.Fatalf("expected error %v, got %v", expectedErr, err)
+}
+}
