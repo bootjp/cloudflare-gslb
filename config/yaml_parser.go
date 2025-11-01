@@ -210,8 +210,17 @@ func parseScalar(value string) interface{} {
 	}
 
 	if len(value) >= 2 {
-		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+		first := value[0]
+		last := value[len(value)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
 			return value[1 : len(value)-1]
+		}
+
+		if (first == '[' && last == ']') || (first == '{' && last == '}') {
+			var parsed interface{}
+			if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+				return parsed
+			}
 		}
 	}
 
@@ -227,6 +236,10 @@ func parseScalar(value string) interface{} {
 
 	if i, err := strconv.Atoi(value); err == nil {
 		return i
+	}
+
+	if f, err := strconv.ParseFloat(value, 64); err == nil {
+		return f
 	}
 
 	return value

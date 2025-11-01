@@ -158,6 +158,56 @@ origins:
 	assertSingleZoneConfig(t, config)
 }
 
+func TestLoadConfigYAMLWithEmptyAndInlineCollections(t *testing.T) {
+	testConfigContent := `
+cloudflare_api_token: another-token
+cloudflare_zones:
+  - zone_id: zone-42
+    name: zone.example
+check_interval_seconds: 45
+origins:
+  - name: app
+    zone_name: zone.example
+    record_type: A
+    health_check:
+      type: http
+      timeout: 10
+    priority_failover_ips: []
+    failover_ips: ["192.0.2.10", "192.0.2.11"]
+    proxied: true
+    return_to_priority: false
+`
+
+	config := loadConfigFromContent(t, "config_empty_inline_test_*.yaml", testConfigContent)
+
+	if config.CloudflareAPIToken != "another-token" {
+		t.Fatalf("Expected CloudflareAPIToken = 'another-token', got '%s'", config.CloudflareAPIToken)
+	}
+	if len(config.CloudflareZoneIDs) != 1 {
+		t.Fatalf("Expected 1 zone, got %d", len(config.CloudflareZoneIDs))
+	}
+	if len(config.Origins) != 1 {
+		t.Fatalf("Expected 1 origin, got %d", len(config.Origins))
+	}
+
+	origin := config.Origins[0]
+	if len(origin.PriorityFailoverIPs) != 0 {
+		t.Fatalf("Expected empty PriorityFailoverIPs, got %d entries", len(origin.PriorityFailoverIPs))
+	}
+	if len(origin.FailoverIPs) != 2 {
+		t.Fatalf("Expected 2 FailoverIPs, got %d", len(origin.FailoverIPs))
+	}
+	if origin.FailoverIPs[0] != "192.0.2.10" || origin.FailoverIPs[1] != "192.0.2.11" {
+		t.Fatalf("Unexpected FailoverIPs: %#v", origin.FailoverIPs)
+	}
+	if !origin.Proxied {
+		t.Fatalf("Expected Proxied to be true")
+	}
+	if origin.ReturnToPriority {
+		t.Fatalf("Expected ReturnToPriority to be false")
+	}
+}
+
 func TestLoadConfig_Error(t *testing.T) {
 	_, err := LoadConfig("nonexistent_file.json")
 	if err == nil {
