@@ -11,6 +11,16 @@
       "name": "example.org"
     }
   ],
+  "notifications": [
+    {
+      "type": "slack",
+      "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    },
+    {
+      "type": "discord",
+      "webhook_url": "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
+    }
+  ],
   "origins": [
     {
       "name": "www",

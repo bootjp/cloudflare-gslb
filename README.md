@@ -14,6 +14,7 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - Cloudflare proxy settings for each origin
 - One-shot mode for batch health checks via CLI or Docker container
 - **Multiple zone support** - Monitor and manage DNS records across multiple Cloudflare zones
+- **Failover notifications** - Send notifications to Slack and Discord webhooks when failover events occur
 
 ## Installation
 
@@ -45,6 +46,16 @@ Example configuration file:
     {
       "zone_id": "YOUR_CLOUDFLARE_ZONE_ID_2",
       "name": "example.org"
+    }
+  ],
+  "notifications": [
+    {
+      "type": "slack",
+      "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    },
+    {
+      "type": "discord",
+      "webhook_url": "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
     }
   ],
   "origins": [
@@ -119,6 +130,9 @@ Example configuration file:
 - `cloudflare_zones`: Array of Cloudflare zones to manage
   - `zone_id`: Cloudflare zone ID
   - `name`: A name to identify this zone (used in `zone_name` field of origins)
+- `notifications` (optional): Array of notification configurations for failover events
+  - `type`: Notification type (`slack` or `discord`)
+  - `webhook_url`: Webhook URL for the notification service
 - `origins`: Array of origin configurations
   - `name`: DNS record name (without the zone part)
   - `zone_name`: The name of the zone this record belongs to (must match one of the names in `cloudflare_zones`)
@@ -189,6 +203,87 @@ You can specify Cloudflare proxy settings individually for each origin:
   - Cloudflare security protections are not applied
   - The origin server's IP address is exposed
   - Suitable when using ICMP health checks or when direct connections are required
+
+### Notifications
+
+Cloudflare GSLB supports sending notifications when failover events occur. This feature helps you stay informed about infrastructure health and failover activities in real-time.
+
+#### Supported Notification Services
+
+- **Slack**: Send notifications to Slack channels via webhook
+- **Discord**: Send notifications to Discord channels via webhook
+
+#### Setting Up Notifications
+
+##### Slack
+
+1. Create a Slack webhook URL:
+   - Go to your Slack workspace settings
+   - Navigate to "Apps" → "Incoming Webhooks"
+   - Create a new webhook and select the channel
+   - Copy the webhook URL
+
+2. Add the webhook URL to your `config.json`:
+   ```json
+   "notifications": [
+     {
+       "type": "slack",
+       "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+     }
+   ]
+   ```
+
+##### Discord
+
+1. Create a Discord webhook URL:
+   - Open your Discord server settings
+   - Navigate to "Integrations" → "Webhooks"
+   - Create a new webhook and select the channel
+   - Copy the webhook URL
+
+2. Add the webhook URL to your `config.json`:
+   ```json
+   "notifications": [
+     {
+       "type": "discord",
+       "webhook_url": "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
+     }
+   ]
+   ```
+
+#### Multiple Notification Channels
+
+You can configure multiple notification channels simultaneously. The system will send notifications to all configured channels:
+
+```json
+"notifications": [
+  {
+    "type": "slack",
+    "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+  },
+  {
+    "type": "discord",
+    "webhook_url": "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
+  }
+]
+```
+
+#### Notification Events
+
+Notifications are sent for the following events:
+
+- **Failover to Backup IP**: When a health check fails and the system switches to a backup IP
+- **Failover to Priority IP**: When switching from a backup IP to a priority IP
+- **Recovery (Return to Priority)**: When a priority IP becomes healthy again and the system returns to it
+
+Each notification includes:
+- Origin name and zone
+- Record type (A or AAAA)
+- Old IP address
+- New IP address
+- Event type
+- Reason for the failover
+- Timestamp
 
 ## Usage
 

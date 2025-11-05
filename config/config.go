@@ -12,6 +12,7 @@ type Config struct {
 	CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
 	CheckInterval      time.Duration  `json:"check_interval_seconds"`
 	Origins            []OriginConfig `json:"origins"`
+	Notifications      []NotificationConfig `json:"notifications"` // 通知設定
 }
 
 // ZoneConfig はCloudflareゾーンの設定を表す構造体
@@ -42,6 +43,12 @@ type HealthCheck struct {
 	Headers            map[string]string `json:"headers"`              // ヘルスチェックリクエストに追加するHTTPヘッダ
 }
 
+// NotificationConfig は通知設定を表す構造体
+type NotificationConfig struct {
+	Type       string `json:"type"`        // "slack" または "discord"
+	WebhookURL string `json:"webhook_url"` // WebhookのURL
+}
+
 // LoadConfig は設定ファイルを読み込む関数
 func LoadConfig(path string) (*Config, error) {
 	file, err := os.Open(path)
@@ -56,6 +63,7 @@ func LoadConfig(path string) (*Config, error) {
 		CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
 		CheckInterval      int            `json:"check_interval_seconds"`
 		Origins            []OriginConfig `json:"origins"`
+		Notifications      []NotificationConfig `json:"notifications"`
 	}
 
 	decoder := json.NewDecoder(file)
@@ -69,6 +77,7 @@ func LoadConfig(path string) (*Config, error) {
 		CloudflareZoneIDs:  tmpConfig.CloudflareZoneIDs,
 		CheckInterval:      time.Duration(tmpConfig.CheckInterval) * time.Second,
 		Origins:            tmpConfig.Origins,
+		Notifications:      tmpConfig.Notifications,
 	}
 
 	// 後方互換性のために単一のZoneIDから変換
