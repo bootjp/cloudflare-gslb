@@ -8,10 +8,10 @@ import (
 
 // Config はアプリケーションの設定を表す構造体
 type Config struct {
-	CloudflareAPIToken string         `json:"cloudflare_api_token"`
-	CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
-	CheckInterval      time.Duration  `json:"check_interval_seconds"`
-	Origins            []OriginConfig `json:"origins"`
+	CloudflareAPIToken string               `json:"cloudflare_api_token"`
+	CloudflareZoneIDs  []ZoneConfig         `json:"cloudflare_zones"`
+	CheckInterval      time.Duration        `json:"check_interval_seconds"`
+	Origins            []OriginConfig       `json:"origins"`
 	Notifications      []NotificationConfig `json:"notifications"` // 通知設定
 }
 
@@ -58,11 +58,11 @@ func LoadConfig(path string) (*Config, error) {
 	defer file.Close()
 
 	var tmpConfig struct {
-		CloudflareAPIToken string         `json:"cloudflare_api_token"`
-		CloudflareZoneID   string         `json:"cloudflare_zone_id"`
-		CloudflareZoneIDs  []ZoneConfig   `json:"cloudflare_zones"`
-		CheckInterval      int            `json:"check_interval_seconds"`
-		Origins            []OriginConfig `json:"origins"`
+		CloudflareAPIToken string               `json:"cloudflare_api_token"`
+		CloudflareZoneID   string               `json:"cloudflare_zone_id"`
+		CloudflareZoneIDs  []ZoneConfig         `json:"cloudflare_zones"`
+		CheckInterval      int                  `json:"check_interval_seconds"`
+		Origins            []OriginConfig       `json:"origins"`
 		Notifications      []NotificationConfig `json:"notifications"`
 	}
 

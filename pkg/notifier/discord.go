@@ -98,19 +98,21 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("Discord webhook returned status: %d", resp.StatusCode)
+		return fmt.Errorf("discord webhook returned status: %d", resp.StatusCode)
 	}
 
 	return nil
 }
 
 func (d *DiscordNotifier) getEventType(event FailoverEvent) string {
-	if event.ReturnToPriority && event.IsPriorityIP {
+	switch {
+	case event.ReturnToPriority && event.IsPriorityIP:
 		return "✅ Recovery (Return to Priority IP)"
-	} else if event.IsPriorityIP {
+	case event.IsPriorityIP:
 		return "⚠️ Failover to Priority IP"
-	} else if event.IsFailoverIP {
+	case event.IsFailoverIP:
 		return "❌ Failover to Backup IP"
+	default:
+		return "⚠️ Failover"
 	}
-	return "⚠️ Failover"
 }

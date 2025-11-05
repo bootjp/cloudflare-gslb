@@ -48,32 +48,13 @@ type Service struct {
 	originStatusMutex sync.RWMutex
 	originStatus      map[string]*OriginStatus
 
-	zoneMapMutex sync.RWMutex
-	zoneMap      map[string]string
-
-	zoneIDMapMutex sync.RWMutex
-	zoneIDMap      map[string]string
+	zoneMap   map[string]string
+	zoneIDMap map[string]string
 
 	notifiers []notifier.Notifier
 }
 
-func NewService(cfg *config.Config) (*Service, error) {
-	if len(cfg.CloudflareZoneIDs) == 0 {
-		return nil, ErrNoCloudflareZoneConfig
-	}
-
-	var defaultClient cloudflare.DNSClientInterface
-	client, err := cloudflare.NewDNSClient(
-		cfg.CloudflareAPIToken,
-		cfg.CloudflareZoneIDs[0].ZoneID,
-		false,
-		60,
-	)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	defaultClient = client
-
+func buildZoneMaps(cfg *config.Config) (map[string]string, map[string]string) {
 	zoneMap := make(map[string]string)
 	zoneIDMap := make(map[string]string)
 
@@ -82,6 +63,10 @@ func NewService(cfg *config.Config) (*Service, error) {
 		zoneIDMap[zone.Name] = zone.ZoneID
 	}
 
+	return zoneMap, zoneIDMap
+}
+
+func buildDNSClients(cfg *config.Config, zoneIDMap map[string]string) (map[string]cloudflare.DNSClientInterface, error) {
 	dnsClients := make(map[string]cloudflare.DNSClientInterface)
 
 	for _, origin := range cfg.Origins {
@@ -104,7 +89,10 @@ func NewService(cfg *config.Config) (*Service, error) {
 		dnsClients[originKey] = client
 	}
 
-	// 通知設定の初期化
+	return dnsClients, nil
+}
+
+func buildNotifiers(cfg *config.Config) []notifier.Notifier {
 	notifiers := make([]notifier.Notifier, 0)
 	for _, nc := range cfg.Notifications {
 		switch nc.Type {
@@ -118,6 +106,32 @@ func NewService(cfg *config.Config) (*Service, error) {
 			log.Printf("Unknown notification type: %s", nc.Type)
 		}
 	}
+	return notifiers
+}
+
+func NewService(cfg *config.Config) (*Service, error) {
+	if len(cfg.CloudflareZoneIDs) == 0 {
+		return nil, ErrNoCloudflareZoneConfig
+	}
+
+	defaultClient, err := cloudflare.NewDNSClient(
+		cfg.CloudflareAPIToken,
+		cfg.CloudflareZoneIDs[0].ZoneID,
+		false,
+		60,
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	zoneMap, zoneIDMap := buildZoneMaps(cfg)
+
+	dnsClients, err := buildDNSClients(cfg, zoneIDMap)
+	if err != nil {
+		return nil, err
+	}
+
+	notifiers := buildNotifiers(cfg)
 
 	return &Service{
 		config:          cfg,
@@ -411,7 +425,7 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 
 	log.Printf("Switching from priority IP to regular failover IP: %s for %s",
 		newIP, origin.Name)
-	
+
 	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
 		return err
 	}
@@ -445,7 +459,7 @@ func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginCon
 	oldIP := unhealthyRecord.Content
 	log.Printf("Replacing unhealthy record %s with failover IP: %s (index: %d, proxied: %t)",
 		oldIP, newIP, nextIndex, origin.Proxied)
-	
+
 	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
 		return err
 	}
@@ -504,7 +518,7 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 			if err := notifier.Notify(notifyCtx, event); err != nil {
 				log.Printf("Failed to send notification: %v", err)
 			} else {
-				log.Printf("Notification sent successfully for %s.%s (%s -> %s)", 
+				log.Printf("Notification sent successfully for %s.%s (%s -> %s)",
 					origin.Name, origin.ZoneName, oldIP, newIP)
 			}
 		}(n)

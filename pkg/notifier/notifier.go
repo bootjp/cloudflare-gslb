@@ -7,15 +7,15 @@ import (
 
 // FailoverEvent represents a failover event
 type FailoverEvent struct {
-	OriginName     string
-	ZoneName       string
-	RecordType     string
-	OldIP          string
-	NewIP          string
-	Reason         string
-	Timestamp      time.Time
-	IsPriorityIP   bool
-	IsFailoverIP   bool
+	OriginName       string
+	ZoneName         string
+	RecordType       string
+	OldIP            string
+	NewIP            string
+	Reason           string
+	Timestamp        time.Time
+	IsPriorityIP     bool
+	IsFailoverIP     bool
 	ReturnToPriority bool
 }
 
