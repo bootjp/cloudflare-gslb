@@ -492,9 +492,16 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 		ReturnToPriority: origin.ReturnToPriority,
 	}
 
+	// Create a context with timeout for notifications
+	notifyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
 	for _, n := range s.notifiers {
+		wg.Add(1)
 		go func(notifier notifier.Notifier) {
-			if err := notifier.Notify(ctx, event); err != nil {
+			defer wg.Done()
+			if err := notifier.Notify(notifyCtx, event); err != nil {
 				log.Printf("Failed to send notification: %v", err)
 			} else {
 				log.Printf("Notification sent successfully for %s.%s (%s -> %s)", 
@@ -502,6 +509,11 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 			}
 		}(n)
 	}
+
+	// Wait for all notifications to complete in a separate goroutine to not block failover
+	go func() {
+		wg.Wait()
+	}()
 }
 
 func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig) error {
