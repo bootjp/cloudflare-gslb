@@ -5,16 +5,16 @@ import (
 	"fmt"
 
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
-	cf "github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare/cloudflare-go/v6/dns"
 )
 
 // DNSClientMock はCloudflare DNSクライアントのモック
 type DNSClientMock struct {
-	Records             map[string][]cf.DNSRecord
-	GetDNSRecordsFunc   func(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error)
+	Records             map[string][]dns.RecordResponse
+	GetDNSRecordsFunc   func(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error)
 	DeleteDNSRecordFunc func(ctx context.Context, recordID string) error
-	CreateDNSRecordFunc func(ctx context.Context, name, recordType, content string) (cf.DNSRecord, error)
-	UpdateDNSRecordFunc func(ctx context.Context, recordID, name, recordType, content string) (cf.DNSRecord, error)
+	CreateDNSRecordFunc func(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
+	UpdateDNSRecordFunc func(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
 	ReplaceRecordsFunc  func(ctx context.Context, name, recordType, newContent string) error
 }
 
@@ -24,12 +24,12 @@ var _ cloudflare.DNSClientInterface = (*DNSClientMock)(nil)
 // NewDNSClientMock は新しいDNSClientMockを作成する
 func NewDNSClientMock() *DNSClientMock {
 	return &DNSClientMock{
-		Records: make(map[string][]cf.DNSRecord),
+		Records: make(map[string][]dns.RecordResponse),
 	}
 }
 
 // GetDNSRecords はGetDNSRecordsFuncを呼び出すか、デフォルトの実装を使用する
-func (m *DNSClientMock) GetDNSRecords(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error) {
+func (m *DNSClientMock) GetDNSRecords(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error) {
 	if m.GetDNSRecordsFunc != nil {
 		return m.GetDNSRecordsFunc(ctx, name, recordType)
 	}
@@ -37,7 +37,7 @@ func (m *DNSClientMock) GetDNSRecords(ctx context.Context, name, recordType stri
 	key := fmt.Sprintf("%s-%s", name, recordType)
 	records, ok := m.Records[key]
 	if !ok {
-		return []cf.DNSRecord{}, nil
+		return []dns.RecordResponse{}, nil
 	}
 	return records, nil
 }
@@ -53,16 +53,16 @@ func (m *DNSClientMock) DeleteDNSRecord(ctx context.Context, recordID string) er
 }
 
 // CreateDNSRecord はCreateDNSRecordFuncを呼び出すか、デフォルトの実装を使用する
-func (m *DNSClientMock) CreateDNSRecord(ctx context.Context, name, recordType, content string) (cf.DNSRecord, error) {
+func (m *DNSClientMock) CreateDNSRecord(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error) {
 	if m.CreateDNSRecordFunc != nil {
 		return m.CreateDNSRecordFunc(ctx, name, recordType, content)
 	}
 
 	// 新しいレコードを作成
-	record := cf.DNSRecord{
+	record := dns.RecordResponse{
 		ID:      fmt.Sprintf("mock-record-%s-%s", name, recordType),
 		Name:    name,
-		Type:    recordType,
+		Type:    dns.RecordResponseType(recordType),
 		Content: content,
 	}
 
@@ -74,16 +74,16 @@ func (m *DNSClientMock) CreateDNSRecord(ctx context.Context, name, recordType, c
 }
 
 // UpdateDNSRecord はUpdateDNSRecordFuncを呼び出すか、デフォルトの実装を使用する
-func (m *DNSClientMock) UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (cf.DNSRecord, error) {
+func (m *DNSClientMock) UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error) {
 	if m.UpdateDNSRecordFunc != nil {
 		return m.UpdateDNSRecordFunc(ctx, recordID, name, recordType, content)
 	}
 
 	// 更新したレコードを返す
-	return cf.DNSRecord{
+	return dns.RecordResponse{
 		ID:      recordID,
 		Name:    name,
-		Type:    recordType,
+		Type:    dns.RecordResponseType(recordType),
 		Content: content,
 	}, nil
 }
@@ -96,11 +96,11 @@ func (m *DNSClientMock) ReplaceRecords(ctx context.Context, name, recordType, ne
 
 	// レコードを置き換える
 	key := fmt.Sprintf("%s-%s", name, recordType)
-	m.Records[key] = []cf.DNSRecord{
+	m.Records[key] = []dns.RecordResponse{
 		{
 			ID:      fmt.Sprintf("mock-record-%s-%s", name, recordType),
 			Name:    name,
-			Type:    recordType,
+			Type:    dns.RecordResponseType(recordType),
 			Content: newContent,
 		},
 	}

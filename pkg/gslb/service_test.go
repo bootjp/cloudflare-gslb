@@ -11,7 +11,7 @@ import (
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
 	cfmock "github.com/bootjp/cloudflare-gslb/pkg/cloudflare/mock"
 	hcmock "github.com/bootjp/cloudflare-gslb/pkg/healthcheck/mock"
-	cf "github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare/cloudflare-go/v6/dns"
 )
 
 // MockDNSClient はDNSClientインターフェースの独自実装
@@ -125,17 +125,17 @@ func createTestServiceWithPriorityConfig() (*Service, *cfmock.DNSClientMock) {
 func TestService_checkOrigin(t *testing.T) {
 	tests := []struct {
 		name              string
-		records           []cf.DNSRecord
+		records           []dns.RecordResponse
 		checkError        error
 		expectReplaceCall bool
 	}{
 		{
 			name: "healthy record",
-			records: []cf.DNSRecord{
+			records: []dns.RecordResponse{
 				{
 					ID:      "record-1",
 					Name:    "example.com",
-					Type:    "A",
+					Type:    dns.RecordResponseTypeA,
 					Content: "192.168.1.1",
 				},
 			},
@@ -144,11 +144,11 @@ func TestService_checkOrigin(t *testing.T) {
 		},
 		{
 			name: "unhealthy record",
-			records: []cf.DNSRecord{
+			records: []dns.RecordResponse{
 				{
 					ID:      "record-1",
 					Name:    "example.com",
-					Type:    "A",
+					Type:    dns.RecordResponseTypeA,
 					Content: "192.168.1.1",
 				},
 			},
@@ -157,7 +157,7 @@ func TestService_checkOrigin(t *testing.T) {
 		},
 		{
 			name:              "no records",
-			records:           []cf.DNSRecord{},
+			records:           []dns.RecordResponse{},
 			checkError:        nil,
 			expectReplaceCall: false,
 		},
@@ -173,11 +173,11 @@ func TestService_checkOrigin(t *testing.T) {
 			dnsClientMock.Records[key] = tt.records
 
 			// GetDNSRecordsの振る舞いを設定
-			dnsClientMock.GetDNSRecordsFunc = func(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error) {
+			dnsClientMock.GetDNSRecordsFunc = func(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error) {
 				if name == "example.com" && recordType == "A" {
 					return tt.records, nil
 				}
-				return []cf.DNSRecord{}, nil
+				return []dns.RecordResponse{}, nil
 			}
 
 			// ReplaceRecordsの呼び出しをトラッキング
@@ -275,10 +275,10 @@ func TestService_replaceUnhealthyRecord(t *testing.T) {
 			}
 
 			// 不健全なレコードを作成
-			unhealthyRecord := cf.DNSRecord{
+			unhealthyRecord := dns.RecordResponse{
 				ID:      "record-1",
 				Name:    "example.com",
-				Type:    tt.recordType,
+				Type:    dns.RecordResponseType(tt.recordType),
 				Content: tt.recordContent,
 			}
 
@@ -361,17 +361,17 @@ func TestIPandStatusSync(t *testing.T) {
 			}
 
 			// モックのレコードを設定
-			dnsClientMock.Records["example.com-A"] = []cf.DNSRecord{
+			dnsClientMock.Records["example.com-A"] = []dns.RecordResponse{
 				{
 					ID:      "record-1",
 					Name:    "example.com",
-					Type:    "A",
+					Type:    dns.RecordResponseTypeA,
 					Content: tt.currentIP,
 				},
 			}
 
 			// GetDNSRecordsの振る舞いを設定
-			dnsClientMock.GetDNSRecordsFunc = func(ctx context.Context, name, recordType string) ([]cf.DNSRecord, error) {
+			dnsClientMock.GetDNSRecordsFunc = func(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error) {
 				key := fmt.Sprintf("%s-%s", name, recordType)
 				return dnsClientMock.Records[key], nil
 			}

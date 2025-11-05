@@ -1,5 +1,6 @@
 # バイナリ
 /gslb
+/oneshot
 *.exe
 *.exe~
 *.dll
