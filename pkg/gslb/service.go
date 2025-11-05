@@ -11,6 +11,7 @@ import (
 	"github.com/bootjp/cloudflare-gslb/config"
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
 	"github.com/bootjp/cloudflare-gslb/pkg/healthcheck"
+	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
 	"github.com/cloudflare/cloudflare-go/v6/dns"
 	"github.com/cockroachdb/errors"
 )
@@ -52,6 +53,8 @@ type Service struct {
 
 	zoneIDMapMutex sync.RWMutex
 	zoneIDMap      map[string]string
+
+	notifiers []notifier.Notifier
 }
 
 func NewService(cfg *config.Config) (*Service, error) {
@@ -101,6 +104,21 @@ func NewService(cfg *config.Config) (*Service, error) {
 		dnsClients[originKey] = client
 	}
 
+	// 通知設定の初期化
+	notifiers := make([]notifier.Notifier, 0)
+	for _, nc := range cfg.Notifications {
+		switch nc.Type {
+		case "slack":
+			notifiers = append(notifiers, notifier.NewSlackNotifier(nc.WebhookURL))
+			log.Printf("Slack notifier configured")
+		case "discord":
+			notifiers = append(notifiers, notifier.NewDiscordNotifier(nc.WebhookURL))
+			log.Printf("Discord notifier configured")
+		default:
+			log.Printf("Unknown notification type: %s", nc.Type)
+		}
+	}
+
 	return &Service{
 		config:          cfg,
 		dnsClient:       defaultClient,
@@ -110,6 +128,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 		originStatus:    make(map[string]*OriginStatus),
 		zoneMap:         zoneMap,
 		zoneIDMap:       zoneIDMap,
+		notifiers:       notifiers,
 	}, nil
 }
 
@@ -240,6 +259,7 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 
 		s.originStatusMutex.Lock()
 		status.HealthyPriority = true
+		oldIP := status.CurrentIP
 		s.originStatusMutex.Unlock()
 
 		// 優先IPに戻すためのDNSレコード更新
@@ -258,6 +278,9 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		s.originStatusMutex.Unlock()
 
 		log.Printf("Successfully switched back to priority IP %s for %s", priorityIP, origin.Name)
+
+		// 通知を送信
+		s.sendNotifications(ctx, origin, oldIP, priorityIP, "Priority IP is healthy again", true, false)
 	}
 }
 
@@ -372,6 +395,7 @@ func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.Orig
 
 func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.OriginConfig, dnsClient cloudflare.DNSClientInterface, originKey string, status *OriginStatus) error {
 	s.originStatusMutex.Lock()
+	oldIP := status.CurrentIP
 	status.UsingPriority = false
 	s.originStatusMutex.Unlock()
 
@@ -387,7 +411,14 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 
 	log.Printf("Switching from priority IP to regular failover IP: %s for %s",
 		newIP, origin.Name)
-	return dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP)
+	
+	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
+		return err
+	}
+
+	// 通知を送信
+	s.sendNotifications(ctx, origin, oldIP, newIP, "Priority IP failed, switching to backup IP", false, true)
+	return nil
 }
 
 func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse, dnsClient cloudflare.DNSClientInterface, originKey string) error {
@@ -411,9 +442,17 @@ func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginCon
 		return err
 	}
 
+	oldIP := unhealthyRecord.Content
 	log.Printf("Replacing unhealthy record %s with failover IP: %s (index: %d, proxied: %t)",
-		unhealthyRecord.Content, newIP, nextIndex, origin.Proxied)
-	return dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP)
+		oldIP, newIP, nextIndex, origin.Proxied)
+	
+	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
+		return err
+	}
+
+	// 通知を送信
+	s.sendNotifications(ctx, origin, oldIP, newIP, "Health check failed, switching to backup IP", false, true)
+	return nil
 }
 
 func (s *Service) validateIPType(recordType, ipAddress string) error {
@@ -433,6 +472,36 @@ func (s *Service) validateIPType(recordType, ipAddress string) error {
 	}
 
 	return nil
+}
+
+func (s *Service) sendNotifications(ctx context.Context, origin config.OriginConfig, oldIP, newIP, reason string, isPriorityIP, isFailoverIP bool) {
+	if len(s.notifiers) == 0 {
+		return
+	}
+
+	event := notifier.FailoverEvent{
+		OriginName:       origin.Name,
+		ZoneName:         origin.ZoneName,
+		RecordType:       origin.RecordType,
+		OldIP:            oldIP,
+		NewIP:            newIP,
+		Reason:           reason,
+		Timestamp:        time.Now(),
+		IsPriorityIP:     isPriorityIP,
+		IsFailoverIP:     isFailoverIP,
+		ReturnToPriority: origin.ReturnToPriority,
+	}
+
+	for _, n := range s.notifiers {
+		go func(notifier notifier.Notifier) {
+			if err := notifier.Notify(ctx, event); err != nil {
+				log.Printf("Failed to send notification: %v", err)
+			} else {
+				log.Printf("Notification sent successfully for %s.%s (%s -> %s)", 
+					origin.Name, origin.ZoneName, oldIP, newIP)
+			}
+		}(n)
+	}
 }
 
 func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig) error {
