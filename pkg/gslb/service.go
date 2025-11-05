@@ -506,9 +506,9 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 		ReturnToPriority: origin.ReturnToPriority,
 	}
 
-	// Create a context with timeout for notifications
-	notifyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	// Create a context with timeout for notifications independent of parent cancellation
+	// Important: Do not cancel immediately on function return since notifications are sent in goroutines
+	notifyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
 	var wg sync.WaitGroup
 	for _, n := range s.notifiers {
@@ -525,8 +525,10 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 	}
 
 	// Wait for all notifications to complete in a separate goroutine to not block failover
+	// Cancel the context after all notification goroutines have finished
 	go func() {
 		wg.Wait()
+		cancel()
 	}()
 }
 
