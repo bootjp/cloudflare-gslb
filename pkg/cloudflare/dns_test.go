@@ -147,20 +147,21 @@ func TestDNSClientReplaceRecordsUpdatesExistingRecord(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(api.updateCalls) != 1 {
-		t.Fatalf("expected update to be called once, got %d", len(api.updateCalls))
+	// With atomic approach: create new record first, then delete old one
+	if len(api.createCalls) != 1 {
+		t.Fatalf("expected create to be called once, got %d", len(api.createCalls))
 	}
 
-	update := api.updateCalls[0]
-	if update.recordID != "record-1" {
-		t.Fatalf("expected record ID record-1, got %s", update.recordID)
+	if len(api.deleteCalls) != 1 {
+		t.Fatalf("expected one delete call, got %d", len(api.deleteCalls))
 	}
 
-	if len(api.deleteCalls) != 0 {
-		t.Fatalf("expected no delete calls, got %d", len(api.deleteCalls))
+	if api.deleteCalls[0] != "record-1" {
+		t.Fatalf("expected record-1 to be deleted, got %s", api.deleteCalls[0])
 	}
-	if len(api.createCalls) != 0 {
-		t.Fatalf("expected no create calls, got %d", len(api.createCalls))
+
+	if len(api.updateCalls) != 0 {
+		t.Fatalf("expected no update calls, got %d", len(api.updateCalls))
 	}
 }
 
@@ -183,29 +184,29 @@ func TestDNSClientReplaceRecordsDeletesDuplicateRecords(t *testing.T) {
 	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.30"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// With two records to delete, expect at least 500ms delay
 	if time.Since(start) < 500*time.Millisecond {
 		t.Fatalf("expected deletion to respect delay between operations")
 	}
 
-	if len(api.updateCalls) != 1 {
-		t.Fatalf("expected one update call, got %d", len(api.updateCalls))
+	// With atomic approach: create new record first, then delete both old ones
+	if len(api.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(api.createCalls))
 	}
-	if len(api.deleteCalls) != 1 {
-		t.Fatalf("expected one delete call, got %d", len(api.deleteCalls))
+	if len(api.deleteCalls) != 2 {
+		t.Fatalf("expected two delete calls, got %d", len(api.deleteCalls))
 	}
-	if api.deleteCalls[0] != "record-2" {
-		t.Fatalf("expected record-2 to be deleted, got %s", api.deleteCalls[0])
-	}
-	if len(api.createCalls) != 0 {
-		t.Fatalf("expected no create calls, got %d", len(api.createCalls))
+	if len(api.updateCalls) != 0 {
+		t.Fatalf("expected no update calls, got %d", len(api.updateCalls))
 	}
 }
 
 func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
-	expected := crerrors.New("update failed")
+	// With atomic approach, we create instead of update, so test create error
+	expected := crerrors.New("create failed")
 	api := &fakeCloudflareAPI{
 		listResp:  []dns.RecordResponse{{ID: "record-1", Name: "example.com", Type: dns.RecordResponseTypeA, Proxied: false}},
-		updateErr: expected,
+		createErr: expected,
 	}
 
 	client := &DNSClient{
@@ -225,8 +226,42 @@ func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
 	if len(api.deleteCalls) != 0 {
 		t.Fatalf("expected no delete calls on error, got %d", len(api.deleteCalls))
 	}
+}
+
+// TestDNSClientReplaceRecordsIdempotent tests that ReplaceRecords is idempotent
+// when the desired content already exists
+func TestDNSClientReplaceRecordsIdempotent(t *testing.T) {
+	api := &fakeCloudflareAPI{
+		listResp: []dns.RecordResponse{{
+			ID:      "record-1",
+			Name:    "example.com",
+			Type:    dns.RecordResponseTypeA,
+			Content: "203.0.113.20",
+			Proxied: false,
+		}},
+	}
+
+	client := &DNSClient{
+		api:     api,
+		zoneID:  "zone",
+		proxied: false,
+		ttl:     300,
+	}
+
+	// Try to replace with the same content - should be idempotent (no changes)
+	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.20"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No operations should be performed since content matches
 	if len(api.createCalls) != 0 {
-		t.Fatalf("expected no create calls on error, got %d", len(api.createCalls))
+		t.Fatalf("expected no create calls, got %d", len(api.createCalls))
+	}
+	if len(api.updateCalls) != 0 {
+		t.Fatalf("expected no update calls, got %d", len(api.updateCalls))
+	}
+	if len(api.deleteCalls) != 0 {
+		t.Fatalf("expected no delete calls, got %d", len(api.deleteCalls))
 	}
 }
 
@@ -647,25 +682,25 @@ func TestDNSClientReplaceRecordsMultiple(t *testing.T) {
 			expectDeletes: 0,
 		},
 		{
-			name:          "update single existing record",
+			name:          "create new and delete existing record (atomic)",
 			existingCount: 1,
-			expectCreate:  false,
-			expectUpdate:  true,
-			expectDeletes: 0,
-		},
-		{
-			name:          "update first and delete second record",
-			existingCount: 2,
-			expectCreate:  false,
-			expectUpdate:  true,
+			expectCreate:  true,
+			expectUpdate:  false,
 			expectDeletes: 1,
 		},
 		{
-			name:          "update first and delete multiple records",
+			name:          "create new and delete two existing records (atomic)",
+			existingCount: 2,
+			expectCreate:  true,
+			expectUpdate:  false,
+			expectDeletes: 2,
+		},
+		{
+			name:          "create new and delete multiple records (atomic)",
 			existingCount: 5,
-			expectCreate:  false,
-			expectUpdate:  true,
-			expectDeletes: 4,
+			expectCreate:  true,
+			expectUpdate:  false,
+			expectDeletes: 5,
 		},
 	}
 

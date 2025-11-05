@@ -173,6 +173,7 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 		return err
 	}
 
+	// If no records exist, create one and return
 	if len(records) == 0 {
 		_, err = c.CreateDNSRecord(ctx, name, recordType, newContent)
 		if err != nil {
@@ -181,11 +182,37 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 		return nil
 	}
 
-	if _, err = c.UpdateDNSRecord(ctx, records[0].ID, name, recordType, newContent); err != nil {
-		return err
+	// Check if any existing record already has the desired content
+	var recordToKeep *dns.RecordResponse
+	var recordsToDelete []dns.RecordResponse
+
+	for i := range records {
+		if records[i].Content == newContent {
+			if recordToKeep == nil {
+				recordToKeep = &records[i]
+			} else {
+				recordsToDelete = append(recordsToDelete, records[i])
+			}
+		} else {
+			recordsToDelete = append(recordsToDelete, records[i])
+		}
 	}
 
-	for _, record := range records[1:] {
+	// If no record has the desired content, create a new one first (atomic approach)
+	// This ensures there's always at least one record active during the transition
+	if recordToKeep == nil {
+		newRecord, err := c.CreateDNSRecord(ctx, name, recordType, newContent)
+		if err != nil {
+			return err
+		}
+		recordToKeep = &newRecord
+		// Add all existing records to the delete list
+		recordsToDelete = records
+	}
+
+	// Delete old records after confirming new record exists
+	// This ensures atomic transition with no downtime
+	for _, record := range recordsToDelete {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
 			return err
 		}
