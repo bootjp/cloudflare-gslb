@@ -32,10 +32,10 @@ type slackMessage struct {
 }
 
 type slackAttachment struct {
-	Color  string        `json:"color,omitempty"`
-	Fields []slackField  `json:"fields,omitempty"`
-	Footer string        `json:"footer,omitempty"`
-	Ts     int64         `json:"ts,omitempty"`
+	Color  string       `json:"color,omitempty"`
+	Fields []slackField `json:"fields,omitempty"`
+	Footer string       `json:"footer,omitempty"`
+	Ts     int64        `json:"ts,omitempty"`
 }
 
 type slackField struct {
@@ -90,19 +90,21 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Slack webhook returned status: %d", resp.StatusCode)
+		return fmt.Errorf("slack webhook returned status: %d", resp.StatusCode)
 	}
 
 	return nil
 }
 
 func (s *SlackNotifier) getEventType(event FailoverEvent) string {
-	if event.ReturnToPriority && event.IsPriorityIP {
+	switch {
+	case event.ReturnToPriority && event.IsPriorityIP:
 		return "Recovery (Return to Priority IP)"
-	} else if event.IsPriorityIP {
+	case event.IsPriorityIP:
 		return "Failover to Priority IP"
-	} else if event.IsFailoverIP {
+	case event.IsFailoverIP:
 		return "Failover to Backup IP"
+	default:
+		return "Failover"
 	}
-	return "Failover"
 }
