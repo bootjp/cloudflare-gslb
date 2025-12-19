@@ -3,7 +3,7 @@ module github.com/bootjp/cloudflare-gslb
 go 1.24.1
 
 require (
-	github.com/cloudflare/cloudflare-go/v6 v6.4.0
+	github.com/cloudflare/cloudflare-go/v6 v6.5.0
 	github.com/cockroachdb/errors v1.12.0
 	golang.org/x/net v0.48.0
 )
