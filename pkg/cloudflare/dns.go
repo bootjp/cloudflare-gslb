@@ -244,10 +244,20 @@ func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType
 	}
 
 	// Create new records for contents that don't exist
+	var createdRecords []dns.RecordResponse
 	for content := range contentsToCreate {
-		_, err := c.CreateDNSRecord(ctx, name, recordType, content)
+		record, err := c.CreateDNSRecord(ctx, name, recordType, content)
 		if err != nil {
+			// Best-effort rollback: delete any records that were successfully created
+			if len(createdRecords) > 0 {
+				if delErr := c.deleteRecords(ctx, createdRecords); delErr != nil {
+					log.Printf("Warning: failed to rollback created DNS records for %s (%s): %v", name, recordType, delErr)
+				}
+			}
 			return err
+		}
+		if record != nil {
+			createdRecords = append(createdRecords, *record)
 		}
 	}
 
