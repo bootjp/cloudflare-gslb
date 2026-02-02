@@ -36,7 +36,8 @@
         }
       },
       "priority_failover_ips": [
-        "192.168.1.1"
+        {"ip": "192.168.1.1", "priority": 0},
+        {"ip": "192.168.1.5", "priority": 1}
       ],
       "failover_ips": [
         "192.168.1.2",
@@ -60,7 +61,7 @@
         }
       },
       "priority_failover_ips": [
-        "10.0.0.1"
+        {"ip": "10.0.0.1", "priority": 0}
       ],
       "failover_ips": [
         "10.0.0.2",
@@ -78,7 +79,8 @@
         "timeout": 5
       },
       "priority_failover_ips": [
-        "2001:db8::1"
+        {"ip": "2001:db8::1", "priority": 0},
+        {"ip": "2001:db8::5", "priority": 1}
       ],
       "failover_ips": [
         "2001:db8::2",
@@ -89,4 +91,4 @@
       "return_to_priority": true
     }
   ]
-} 
+}

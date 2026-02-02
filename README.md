@@ -70,7 +70,8 @@ Example configuration file:
         "timeout": 5
       },
       "priority_failover_ips": [
-        "192.168.1.1"
+        {"ip": "192.168.1.1", "priority": 0},
+        {"ip": "192.168.1.5", "priority": 1}
       ],
       "failover_ips": [
         "192.168.1.2",
@@ -91,7 +92,7 @@ Example configuration file:
         "timeout": 5
       },
       "priority_failover_ips": [
-        "10.0.0.1"
+        {"ip": "10.0.0.1", "priority": 0}
       ],
       "failover_ips": [
         "10.0.0.2",
@@ -109,7 +110,8 @@ Example configuration file:
         "timeout": 5
       },
       "priority_failover_ips": [
-        "2001:db8::1"
+        {"ip": "2001:db8::1", "priority": 0},
+        {"ip": "2001:db8::5", "priority": 1}
       ],
       "failover_ips": [
         "2001:db8::2",
@@ -144,7 +146,9 @@ Example configuration file:
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
-  - `priority_failover_ips`: Primary IP addresses to use when healthy
+  - `priority_failover_ips`: Primary IP addresses to use when healthy. Can be specified with priority values (smaller values = higher priority)
+    - `ip`: IP address
+    - `priority`: Priority value (0 = highest priority)
   - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
   - `proxied`: Whether to enable Cloudflare proxy for this record
   - `return_to_priority`: Whether to return to priority IPs when they become healthy again
@@ -166,6 +170,14 @@ For backward compatibility, you can still use the old configuration format with 
 
 When using the old format, all origins will be associated with the single zone specified by `cloudflare_zone_id`.
 
+You can also use the old format for `priority_failover_ips` as a simple string array:
+
+```json
+"priority_failover_ips": ["192.168.1.1", "192.168.1.2"]
+```
+
+In this case, the array index will be used as the priority value (0 for the first element, 1 for the second, etc.).
+
 ### Failover IP List Behavior
 
 When a failover IP list is configured, it operates as follows:
@@ -181,12 +193,29 @@ By combining priority IPs and failover IPs, you can optimize resource efficiency
 
 1. During normal operation, traffic is directed to priority IPs (e.g., dedicated servers with fixed pricing)
 2. During outages, traffic is directed to failover IPs (e.g., cloud VMs with pay-as-you-go pricing)
-3. When the priority IP recovers, traffic automatically returns to it (if `return_to_priority: true`)
+3. When the priority IP recovers, traffic automatically returns to the highest priority healthy IP (if `return_to_priority: true`)
+
+With priority values, you can define multiple priority servers with explicit ordering:
+
+```json
+"priority_failover_ips": [
+  {"ip": "192.168.1.1", "priority": 0},
+  {"ip": "192.168.1.2", "priority": 1},
+  {"ip": "192.168.1.3", "priority": 2}
+]
+```
+
+When returning to priority IPs, the system will select the highest priority (lowest value) healthy IP. This allows you to:
+- Define a primary server (priority 0) and a secondary server (priority 1)
+- If the primary server fails, traffic goes to failover IPs
+- When health recovers, traffic returns to the secondary server if primary is still unhealthy
+- Traffic automatically returns to the primary server when it becomes healthy again
 
 This approach offers the following benefits:
 - Cost optimization during normal operation (prioritizing fixed-cost resources)
 - Availability assurance during outages (backup with pay-as-you-go resources)
 - Reduced operational burden with automatic failback upon recovery
+- Flexible prioritization of multiple priority servers
 
 ### About Proxy Settings
 

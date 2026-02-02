@@ -96,7 +96,7 @@ func createTestServiceWithPriorityConfig() (*Service, *cfmock.DNSClientMock) {
 					Endpoint: "/health",
 					Timeout:  5,
 				},
-				PriorityFailoverIPs: []string{"192.168.1.1"},
+				PriorityFailoverIPs: []config.PriorityIP{{IP: "192.168.1.1", Priority: 0}},
 				FailoverIPs:         []string{"192.168.1.2", "192.168.1.3"},
 				ReturnToPriority:    true,
 			},
@@ -465,7 +465,7 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 
 			// ヘルスチェッカーのモック - 優先IPのヘルスチェック結果をテストケースに応じて調整
 			checker := hcmock.NewCheckerMock(func(ip string) error {
-				if ip == origin.PriorityFailoverIPs[0] && !tt.healthyPriority {
+				if ip == origin.PriorityFailoverIPs[0].IP && !tt.healthyPriority {
 					return fmt.Errorf("priority IP is unhealthy")
 				}
 				return nil // その他のIPは正常と見なす
@@ -503,6 +503,153 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 				t.Errorf("ReplaceRecords was called %d times, expected at least 1", replaceCallCount)
 			} else if !tt.expectReplaceCall && replaceCallCount > 0 {
 				t.Errorf("ReplaceRecords was called %d times, expected 0", replaceCallCount)
+			}
+		})
+	}
+}
+
+// TestPriorityBasedSelection 優先度に基づいたIP選択のテスト
+func TestPriorityBasedSelection(t *testing.T) {
+	tests := []struct {
+		name              string
+		priorityIPs       []config.PriorityIP
+		unhealthyIPs      []string // どのIPが不健全か
+		currentIP         string   // 現在のIP（フェイルオーバーIP）
+		expectedNewIP     string   // 期待される新しいIP
+		expectReplaceCall bool
+	}{
+		{
+			name: "select highest priority healthy IP",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.3", Priority: 2},
+				{IP: "192.168.1.1", Priority: 0}, // 最も高い優先度
+				{IP: "192.168.1.2", Priority: 1},
+			},
+			unhealthyIPs:      []string{},
+			currentIP:         "192.168.1.4", // フェイルオーバーIP
+			expectedNewIP:     "192.168.1.1", // 最も高い優先度のIP
+			expectReplaceCall: true,
+		},
+		{
+			name: "select second highest priority when first is unhealthy",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.3", Priority: 2},
+				{IP: "192.168.1.1", Priority: 0}, // 不健全
+				{IP: "192.168.1.2", Priority: 1}, // 次に高い優先度
+			},
+			unhealthyIPs:      []string{"192.168.1.1"}, // 最も高い優先度のIPが不健全
+			currentIP:         "192.168.1.4",           // フェイルオーバーIP
+			expectedNewIP:     "192.168.1.2",           // 2番目に高い優先度のIP
+			expectReplaceCall: true,
+		},
+		{
+			name: "all priority IPs unhealthy - no switch",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.1", Priority: 0},
+				{IP: "192.168.1.2", Priority: 1},
+			},
+			unhealthyIPs:      []string{"192.168.1.1", "192.168.1.2"}, // すべて不健全
+			currentIP:         "192.168.1.4",                          // フェイルオーバーIP
+			expectedNewIP:     "",                                     // 変更なし
+			expectReplaceCall: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// テスト用の設定
+			cfg := &config.Config{
+				CloudflareAPIToken: "test-token",
+				CloudflareZoneIDs: []config.ZoneConfig{
+					{
+						ZoneID: "test-zone",
+						Name:   "default",
+					},
+				},
+				CheckInterval: 1 * time.Second,
+				Origins: []config.OriginConfig{
+					{
+						Name:       "example.com",
+						ZoneName:   "default",
+						RecordType: "A",
+						HealthCheck: config.HealthCheck{
+							Type:     "http",
+							Endpoint: "/health",
+							Timeout:  5,
+						},
+						PriorityFailoverIPs: tt.priorityIPs,
+						FailoverIPs:         []string{"192.168.1.4", "192.168.1.5"},
+						ReturnToPriority:    true,
+					},
+				},
+			}
+
+			// DNSクライアントのモック
+			dnsClientMock := cfmock.NewDNSClientMock()
+			mockClient := &MockDNSClient{dnsClientMock}
+
+			// サービスの作成
+			service := &Service{
+				config:          cfg,
+				dnsClient:       mockClient,
+				stopCh:          make(chan struct{}),
+				failoverIndices: make(map[string]int),
+				dnsClients:      make(map[string]cloudflare.DNSClientInterface),
+				originStatus:    make(map[string]*OriginStatus),
+				zoneMap:         map[string]string{"test-zone": "default"},
+				zoneIDMap:       map[string]string{"default": "test-zone"},
+			}
+
+			origin := cfg.Origins[0]
+			originKey := "default-example.com-A"
+
+			// dnsClientsマップにモッククライアントを追加
+			service.dnsClients[originKey] = dnsClientMock
+
+			// originStatusを初期化（フェイルオーバーIPを使用中）
+			service.originStatus[originKey] = &OriginStatus{
+				CurrentIP:       tt.currentIP,
+				UsingPriority:   false,
+				HealthyPriority: false,
+				LastCheck:       time.Now(),
+			}
+
+			// ヘルスチェッカーのモック - unhealthyIPsに含まれるIPはエラーを返す
+			checker := hcmock.NewCheckerMock(func(ip string) error {
+				for _, unhealthyIP := range tt.unhealthyIPs {
+					if ip == unhealthyIP {
+						return fmt.Errorf("IP %s is unhealthy", ip)
+					}
+				}
+				return nil
+			})
+
+			// ReplaceRecordsの呼び出しをトラッキング
+			var actualNewIP string
+			replaceCallCount := 0
+			dnsClientMock.ReplaceRecordsFunc = func(ctx context.Context, name, recordType, newContent string) error {
+				replaceCallCount++
+				actualNewIP = newContent
+				service.originStatus[originKey].CurrentIP = newContent
+				service.originStatus[originKey].UsingPriority = true
+				return nil
+			}
+
+			// テスト対象のメソッドを実行
+			ctx := context.Background()
+			service.checkPriorityIPs(ctx, origin, checker)
+
+			// 期待通りにReplaceRecordsが呼ばれたか確認
+			if tt.expectReplaceCall {
+				if replaceCallCount == 0 {
+					t.Errorf("ReplaceRecords was not called, expected it to be called")
+				} else if actualNewIP != tt.expectedNewIP {
+					t.Errorf("ReplaceRecords called with IP = '%s', expected '%s'", actualNewIP, tt.expectedNewIP)
+				}
+			} else {
+				if replaceCallCount > 0 {
+					t.Errorf("ReplaceRecords was called %d times, expected 0", replaceCallCount)
+				}
 			}
 		})
 	}

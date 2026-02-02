@@ -396,3 +396,188 @@ func TestNonExistentZoneInConfig(t *testing.T) {
 		t.Errorf("Expected 2 origins, got %d", len(config.Origins))
 	}
 }
+
+// TestPriorityFailoverIPsBackwardCompatibility tests backward compatibility with string array format
+func TestPriorityFailoverIPsBackwardCompatibility(t *testing.T) {
+	// Old format: priority_failover_ips as a string array
+	testConfigContent := `{
+		"cloudflare_api_token": "test-token",
+		"cloudflare_zone_id": "test-zone",
+		"check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "www",
+				"record_type": "A",
+				"health_check": {
+					"type": "http",
+					"endpoint": "/health",
+					"host": "www.example.com",
+					"timeout": 5
+				},
+				"priority_failover_ips": ["192.168.1.1", "192.168.1.2"],
+				"failover_ips": ["192.168.1.3", "192.168.1.4"]
+			}
+		]
+	}`
+
+	tmpfile, err := os.CreateTemp("", "config_test_*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	config, err := LoadConfig(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	// Check that the priority IPs were correctly parsed with default priorities
+	origin := config.Origins[0]
+	if len(origin.PriorityFailoverIPs) != 2 {
+		t.Errorf("Expected 2 priority failover IPs, got %d", len(origin.PriorityFailoverIPs))
+	}
+	if origin.PriorityFailoverIPs[0].IP != "192.168.1.1" {
+		t.Errorf("Expected first priority IP = '192.168.1.1', got '%s'", origin.PriorityFailoverIPs[0].IP)
+	}
+	if origin.PriorityFailoverIPs[0].Priority != 0 {
+		t.Errorf("Expected first priority value = 0, got %d", origin.PriorityFailoverIPs[0].Priority)
+	}
+	if origin.PriorityFailoverIPs[1].IP != "192.168.1.2" {
+		t.Errorf("Expected second priority IP = '192.168.1.2', got '%s'", origin.PriorityFailoverIPs[1].IP)
+	}
+	if origin.PriorityFailoverIPs[1].Priority != 1 {
+		t.Errorf("Expected second priority value = 1, got %d", origin.PriorityFailoverIPs[1].Priority)
+	}
+}
+
+// TestPriorityFailoverIPsNewFormat tests the new format with explicit priority values
+func TestPriorityFailoverIPsNewFormat(t *testing.T) {
+	// New format: priority_failover_ips as an array of objects with priority
+	testConfigContent := `{
+		"cloudflare_api_token": "test-token",
+		"cloudflare_zone_id": "test-zone",
+		"check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "www",
+				"record_type": "A",
+				"health_check": {
+					"type": "http",
+					"endpoint": "/health",
+					"host": "www.example.com",
+					"timeout": 5
+				},
+				"priority_failover_ips": [
+					{"ip": "192.168.1.3", "priority": 2},
+					{"ip": "192.168.1.1", "priority": 0},
+					{"ip": "192.168.1.2", "priority": 1}
+				],
+				"failover_ips": ["192.168.1.4", "192.168.1.5"]
+			}
+		]
+	}`
+
+	tmpfile, err := os.CreateTemp("", "config_test_*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	config, err := LoadConfig(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	// Check that the priority IPs were correctly parsed with explicit priorities
+	origin := config.Origins[0]
+	if len(origin.PriorityFailoverIPs) != 3 {
+		t.Errorf("Expected 3 priority failover IPs, got %d", len(origin.PriorityFailoverIPs))
+	}
+
+	// IPs should be stored in the order they were defined
+	if origin.PriorityFailoverIPs[0].IP != "192.168.1.3" {
+		t.Errorf("Expected first priority IP = '192.168.1.3', got '%s'", origin.PriorityFailoverIPs[0].IP)
+	}
+	if origin.PriorityFailoverIPs[0].Priority != 2 {
+		t.Errorf("Expected first priority value = 2, got %d", origin.PriorityFailoverIPs[0].Priority)
+	}
+
+	// GetPriorityIPs should return IPs sorted by priority
+	sortedIPs := origin.GetPriorityIPs()
+	if len(sortedIPs) != 3 {
+		t.Errorf("Expected 3 sorted priority IPs, got %d", len(sortedIPs))
+	}
+	if sortedIPs[0] != "192.168.1.1" {
+		t.Errorf("Expected first sorted IP = '192.168.1.1', got '%s'", sortedIPs[0])
+	}
+	if sortedIPs[1] != "192.168.1.2" {
+		t.Errorf("Expected second sorted IP = '192.168.1.2', got '%s'", sortedIPs[1])
+	}
+	if sortedIPs[2] != "192.168.1.3" {
+		t.Errorf("Expected third sorted IP = '192.168.1.3', got '%s'", sortedIPs[2])
+	}
+}
+
+// TestIsPriorityIP tests the IsPriorityIP method
+func TestIsPriorityIP(t *testing.T) {
+	origin := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 0},
+			{IP: "192.168.1.2", Priority: 1},
+		},
+		FailoverIPs: []string{"192.168.1.3"},
+	}
+
+	if !origin.IsPriorityIP("192.168.1.1") {
+		t.Error("Expected 192.168.1.1 to be a priority IP")
+	}
+	if !origin.IsPriorityIP("192.168.1.2") {
+		t.Error("Expected 192.168.1.2 to be a priority IP")
+	}
+	if origin.IsPriorityIP("192.168.1.3") {
+		t.Error("Expected 192.168.1.3 to NOT be a priority IP")
+	}
+	if origin.IsPriorityIP("192.168.1.4") {
+		t.Error("Expected 192.168.1.4 to NOT be a priority IP")
+	}
+}
+
+// TestGetPriorityIPs tests the GetPriorityIPs method
+func TestGetPriorityIPs(t *testing.T) {
+	// Test with empty list
+	emptyOrigin := OriginConfig{}
+	if emptyOrigin.GetPriorityIPs() != nil {
+		t.Error("Expected nil for empty priority IPs")
+	}
+
+	// Test sorting by priority
+	origin := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.3", Priority: 2},
+			{IP: "192.168.1.1", Priority: 0},
+			{IP: "192.168.1.2", Priority: 1},
+		},
+	}
+
+	sortedIPs := origin.GetPriorityIPs()
+	expected := []string{"192.168.1.1", "192.168.1.2", "192.168.1.3"}
+	for i, ip := range sortedIPs {
+		if ip != expected[i] {
+			t.Errorf("Expected IP at index %d = '%s', got '%s'", i, expected[i], ip)
+		}
+	}
+}
