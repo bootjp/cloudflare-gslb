@@ -56,7 +56,7 @@ func (o *OriginConfig) GetPriorityIPs() []string {
 	// 優先度でソートしたコピーを作成（降順：大きい値が先）
 	sorted := make([]PriorityIP, len(o.PriorityFailoverIPs))
 	copy(sorted, o.PriorityFailoverIPs)
-	sort.Slice(sorted, func(i, j int) bool {
+	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].Priority > sorted[j].Priority
 	})
 
