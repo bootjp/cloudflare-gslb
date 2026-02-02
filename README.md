@@ -146,7 +146,7 @@ Example configuration file:
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
-  - `priority_failover_ips`: Primary IP addresses to use when healthy. Can be specified with priority values (higher values = higher priority)
+  - `priority_failover_ips`: Primary IP addresses to use when healthy. You can specify priority values (higher values = higher priority)
     - `ip`: IP address
     - `priority`: Priority value (higher value = higher priority, e.g., priority 2 > priority 1 > priority 0)
   - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
