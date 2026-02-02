@@ -288,7 +288,6 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		log.Printf("Found %d healthy priority IP(s) for %s: %v, switching back", len(healthyPriorityIPs), origin.Name, healthyPriorityIPs)
 
 		s.originStatusMutex.Lock()
-		status.HealthyPriority = true
 		oldIP := status.CurrentIP
 		s.originStatusMutex.Unlock()
 
@@ -300,8 +299,9 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 			return
 		}
 
-		// 状態を更新（最初のIPを代表として保存）
+		// DNS更新が成功した場合のみ状態を更新（最初のIPを代表として保存）
 		s.originStatusMutex.Lock()
+		status.HealthyPriority = true
 		status.CurrentIP = healthyPriorityIPs[0]
 		status.UsingPriority = true
 		s.originStatusMutex.Unlock()
