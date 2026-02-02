@@ -260,15 +260,15 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 	const noPriorityFound = -1
 	foundPriority := noPriorityFound
 
+	// IP から優先度を即時参照できるようマップを作成（ループごとの線形探索を回避）
+	ipToPriority := make(map[string]int, len(origin.PriorityFailoverIPs))
+	for _, p := range origin.PriorityFailoverIPs {
+		ipToPriority[p.IP] = p.Priority
+	}
+
 	for _, ip := range priorityIPs {
-		// このIPの優先度を取得
-		var currentPriority int
-		for _, p := range origin.PriorityFailoverIPs {
-			if p.IP == ip {
-				currentPriority = p.Priority
-				break
-			}
-		}
+		// このIPの優先度を取得（存在しない場合は 0：元のコードと同様のゼロ値）
+		currentPriority := ipToPriority[ip]
 
 		// すでに健全なIPが見つかっている場合、異なる優先度のIPはスキップ
 		if foundPriority != noPriorityFound && currentPriority != foundPriority {
