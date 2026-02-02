@@ -69,7 +69,7 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 					{Name: "Origin", Value: fmt.Sprintf("%s.%s (%s)", event.OriginName, event.ZoneName, event.RecordType), Inline: true},
 					{Name: "Event Type", Value: d.getEventType(event), Inline: true},
 					{Name: "Old IP", Value: event.OldIP, Inline: true},
-					{Name: "New IP", Value: event.NewIP, Inline: true},
+					{Name: "New IP(s)", Value: event.GetNewIPsDisplay(), Inline: true},
 				},
 				Footer: &discordFooter{
 					Text: "Cloudflare GSLB",

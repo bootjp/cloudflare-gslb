@@ -256,9 +256,7 @@ func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType
 			}
 			return err
 		}
-		if record != nil {
-			createdRecords = append(createdRecords, *record)
-		}
+		createdRecords = append(createdRecords, record)
 	}
 
 	// Delete records that are no longer needed

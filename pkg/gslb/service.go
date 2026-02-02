@@ -309,8 +309,8 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		newIPsStr := fmt.Sprintf("%v", healthyPriorityIPs)
 		log.Printf("Successfully switched back to priority IP(s) %s for %s", newIPsStr, origin.Name)
 
-		// 通知を送信
-		s.sendNotifications(ctx, origin, oldIP, healthyPriorityIPs[0], "Priority IP is healthy again", true, false)
+		// 通知を送信（すべての優先IPを含める）
+		s.sendNotificationsMultiple(ctx, origin, oldIP, healthyPriorityIPs, "Priority IP is healthy again", true, false)
 	}
 }
 
@@ -499,8 +499,18 @@ func (s *Service) validateIPType(recordType, ipAddress string) error {
 }
 
 func (s *Service) sendNotifications(ctx context.Context, origin config.OriginConfig, oldIP, newIP, reason string, isPriorityIP, isFailoverIP bool) {
+	s.sendNotificationsMultiple(ctx, origin, oldIP, []string{newIP}, reason, isPriorityIP, isFailoverIP)
+}
+
+func (s *Service) sendNotificationsMultiple(ctx context.Context, origin config.OriginConfig, oldIP string, newIPs []string, reason string, isPriorityIP, isFailoverIP bool) {
 	if len(s.notifiers) == 0 {
 		return
+	}
+
+	// Use first IP as primary for backward compatibility
+	newIP := ""
+	if len(newIPs) > 0 {
+		newIP = newIPs[0]
 	}
 
 	event := notifier.FailoverEvent{
@@ -509,6 +519,7 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 		RecordType:       origin.RecordType,
 		OldIP:            oldIP,
 		NewIP:            newIP,
+		NewIPs:           newIPs,
 		Reason:           reason,
 		Timestamp:        time.Now(),
 		IsPriorityIP:     isPriorityIP,
@@ -520,6 +531,8 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 	// Important: Do not cancel immediately on function return since notifications are sent in goroutines
 	notifyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
+	newIPsDisplay := event.GetNewIPsDisplay()
+
 	var wg sync.WaitGroup
 	for _, n := range s.notifiers {
 		wg.Add(1)
@@ -529,7 +542,7 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 				log.Printf("Failed to send notification: %v", err)
 			} else {
 				log.Printf("Notification sent successfully for %s.%s (%s -> %s)",
-					origin.Name, origin.ZoneName, oldIP, newIP)
+					origin.Name, origin.ZoneName, oldIP, newIPsDisplay)
 			}
 		}(n)
 	}
