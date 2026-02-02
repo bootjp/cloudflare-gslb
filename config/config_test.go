@@ -643,3 +643,73 @@ func TestParsePriorityFailoverIPsEdgeCases(t *testing.T) {
 		t.Error("Expected error for config with empty IP in new format, but got none")
 	}
 }
+
+// TestGetPriorityIPsByPriority tests the GetPriorityIPsByPriority method
+func TestGetPriorityIPsByPriority(t *testing.T) {
+	origin := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 0},
+			{IP: "192.168.1.2", Priority: 0},
+			{IP: "192.168.1.3", Priority: 1},
+			{IP: "192.168.1.4", Priority: 1},
+			{IP: "192.168.1.5", Priority: 2},
+		},
+	}
+
+	// Test getting priority 0 IPs
+	p0IPs := origin.GetPriorityIPsByPriority(0)
+	if len(p0IPs) != 2 {
+		t.Errorf("Expected 2 IPs for priority 0, got %d", len(p0IPs))
+	}
+	expectedP0 := map[string]bool{"192.168.1.1": true, "192.168.1.2": true}
+	for _, ip := range p0IPs {
+		if !expectedP0[ip] {
+			t.Errorf("Unexpected IP %s in priority 0 result", ip)
+		}
+	}
+
+	// Test getting priority 1 IPs
+	p1IPs := origin.GetPriorityIPsByPriority(1)
+	if len(p1IPs) != 2 {
+		t.Errorf("Expected 2 IPs for priority 1, got %d", len(p1IPs))
+	}
+
+	// Test getting priority 2 IPs
+	p2IPs := origin.GetPriorityIPsByPriority(2)
+	if len(p2IPs) != 1 || p2IPs[0] != "192.168.1.5" {
+		t.Errorf("Expected ['192.168.1.5'] for priority 2, got %v", p2IPs)
+	}
+
+	// Test getting non-existent priority
+	p3IPs := origin.GetPriorityIPsByPriority(3)
+	if len(p3IPs) != 0 {
+		t.Errorf("Expected 0 IPs for priority 3, got %d", len(p3IPs))
+	}
+}
+
+// TestGetLowestPriority tests the GetLowestPriority method
+func TestGetLowestPriority(t *testing.T) {
+	// Test with non-empty list
+	origin := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 2},
+			{IP: "192.168.1.2", Priority: 0},
+			{IP: "192.168.1.3", Priority: 1},
+		},
+	}
+
+	priority, ok := origin.GetLowestPriority()
+	if !ok {
+		t.Error("Expected GetLowestPriority to return true for non-empty list")
+	}
+	if priority != 0 {
+		t.Errorf("Expected lowest priority = 0, got %d", priority)
+	}
+
+	// Test with empty list
+	emptyOrigin := OriginConfig{}
+	_, ok = emptyOrigin.GetLowestPriority()
+	if ok {
+		t.Error("Expected GetLowestPriority to return false for empty list")
+	}
+}

@@ -37,6 +37,7 @@
       },
       "priority_failover_ips": [
         {"ip": "192.168.1.1", "priority": 0},
+        {"ip": "192.168.1.6", "priority": 0},
         {"ip": "192.168.1.5", "priority": 1}
       ],
       "failover_ips": [
@@ -80,6 +81,7 @@
       },
       "priority_failover_ips": [
         {"ip": "2001:db8::1", "priority": 0},
+        {"ip": "2001:db8::6", "priority": 0},
         {"ip": "2001:db8::5", "priority": 1}
       ],
       "failover_ips": [

@@ -205,17 +205,35 @@ With priority values, you can define multiple priority servers with explicit ord
 ]
 ```
 
-When returning to priority IPs, the system will select the highest priority (lowest value) healthy IP. This allows you to:
+#### Multiple IPs with Same Priority (Round-Robin)
+
+When multiple IPs have the same priority value, all healthy IPs at that priority level will be set as DNS records. This enables DNS round-robin load balancing:
+
+```json
+"priority_failover_ips": [
+  {"ip": "192.168.1.1", "priority": 0},
+  {"ip": "192.168.1.2", "priority": 0},
+  {"ip": "192.168.1.3", "priority": 1}
+]
+```
+
+In this example:
+- Both `192.168.1.1` and `192.168.1.2` have priority 0, so when returning to priority IPs, both will be set as DNS records (enabling DNS round-robin)
+- If all priority 0 IPs are unhealthy, the system will use `192.168.1.3` (priority 1)
+
+When returning to priority IPs, the system will select all healthy IPs at the highest priority (lowest value) level. This allows you to:
 - Define a primary server (priority 0) and a secondary server (priority 1)
 - If the primary server fails, traffic goes to failover IPs
 - When health recovers, traffic returns to the secondary server if primary is still unhealthy
 - Traffic automatically returns to the primary server when it becomes healthy again
+- Use multiple servers at the same priority level for DNS round-robin load balancing
 
 This approach offers the following benefits:
 - Cost optimization during normal operation (prioritizing fixed-cost resources)
 - Availability assurance during outages (backup with pay-as-you-go resources)
 - Reduced operational burden with automatic failback upon recovery
 - Flexible prioritization of multiple priority servers
+- DNS round-robin support for servers with the same priority
 
 ### About Proxy Settings
 

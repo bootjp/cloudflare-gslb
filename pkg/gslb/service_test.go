@@ -483,12 +483,14 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 				LastCheck:       time.Now(),
 			}
 
-			// ReplaceRecordsの呼び出しをトラッキング
+			// ReplaceRecordsMultipleの呼び出しをトラッキング
 			replaceCallCount := 0
-			dnsClientMock.ReplaceRecordsFunc = func(ctx context.Context, name, recordType, newContent string) error {
+			dnsClientMock.ReplaceRecordsMultipleFunc = func(ctx context.Context, name, recordType string, newContents []string) error {
 				replaceCallCount++
-				service.originStatus[originKey].CurrentIP = newContent
-				service.originStatus[originKey].UsingPriority = true
+				if len(newContents) > 0 {
+					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].UsingPriority = true
+				}
 				return nil
 			}
 
@@ -498,11 +500,11 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 				service.checkPriorityIPs(ctx, origin, checker)
 			}
 
-			// 期待通りにReplaceRecordsが呼ばれたか確認
+			// 期待通りにReplaceRecordsMultipleが呼ばれたか確認
 			if tt.expectReplaceCall && replaceCallCount == 0 {
-				t.Errorf("ReplaceRecords was called %d times, expected at least 1", replaceCallCount)
+				t.Errorf("ReplaceRecordsMultiple was called %d times, expected at least 1", replaceCallCount)
 			} else if !tt.expectReplaceCall && replaceCallCount > 0 {
-				t.Errorf("ReplaceRecords was called %d times, expected 0", replaceCallCount)
+				t.Errorf("ReplaceRecordsMultiple was called %d times, expected 0", replaceCallCount)
 			}
 		})
 	}
@@ -624,14 +626,16 @@ func TestPriorityBasedSelection(t *testing.T) {
 				return nil
 			})
 
-			// ReplaceRecordsの呼び出しをトラッキング
-			var actualNewIP string
+			// ReplaceRecordsMultipleの呼び出しをトラッキング
+			var actualNewIPs []string
 			replaceCallCount := 0
-			dnsClientMock.ReplaceRecordsFunc = func(ctx context.Context, name, recordType, newContent string) error {
+			dnsClientMock.ReplaceRecordsMultipleFunc = func(ctx context.Context, name, recordType string, newContents []string) error {
 				replaceCallCount++
-				actualNewIP = newContent
-				service.originStatus[originKey].CurrentIP = newContent
-				service.originStatus[originKey].UsingPriority = true
+				actualNewIPs = newContents
+				if len(newContents) > 0 {
+					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].UsingPriority = true
+				}
 				return nil
 			}
 
@@ -639,16 +643,197 @@ func TestPriorityBasedSelection(t *testing.T) {
 			ctx := context.Background()
 			service.checkPriorityIPs(ctx, origin, checker)
 
-			// 期待通りにReplaceRecordsが呼ばれたか確認
+			// 期待通りにReplaceRecordsMultipleが呼ばれたか確認
 			if tt.expectReplaceCall {
 				if replaceCallCount == 0 {
-					t.Errorf("ReplaceRecords was not called, expected it to be called")
-				} else if actualNewIP != tt.expectedNewIP {
-					t.Errorf("ReplaceRecords called with IP = '%s', expected '%s'", actualNewIP, tt.expectedNewIP)
+					t.Errorf("ReplaceRecordsMultiple was not called, expected it to be called")
+				} else if len(actualNewIPs) == 0 || actualNewIPs[0] != tt.expectedNewIP {
+					t.Errorf("ReplaceRecordsMultiple called with IPs = '%v', expected first IP to be '%s'", actualNewIPs, tt.expectedNewIP)
 				}
 			} else {
 				if replaceCallCount > 0 {
-					t.Errorf("ReplaceRecords was called %d times, expected 0", replaceCallCount)
+					t.Errorf("ReplaceRecordsMultiple was called %d times, expected 0", replaceCallCount)
+				}
+			}
+		})
+	}
+}
+
+// TestMultiplePriorityIPsWithSamePriority 同一優先度の複数IPがすべて設定されるテスト
+func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
+	tests := []struct {
+		name             string
+		priorityIPs      []config.PriorityIP
+		unhealthyIPs     []string
+		currentIP        string
+		expectedNewIPs   []string
+		expectReplaceCall bool
+	}{
+		{
+			name: "all same priority IPs are healthy - all should be set",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.1", Priority: 0},
+				{IP: "192.168.1.2", Priority: 0},
+				{IP: "192.168.1.3", Priority: 0},
+			},
+			unhealthyIPs:      []string{},
+			currentIP:         "192.168.1.10", // フェイルオーバーIP
+			expectedNewIPs:    []string{"192.168.1.1", "192.168.1.2", "192.168.1.3"},
+			expectReplaceCall: true,
+		},
+		{
+			name: "one of same priority IPs is unhealthy - only healthy ones should be set",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.1", Priority: 0},
+				{IP: "192.168.1.2", Priority: 0},
+				{IP: "192.168.1.3", Priority: 0},
+			},
+			unhealthyIPs:      []string{"192.168.1.2"},
+			currentIP:         "192.168.1.10",
+			expectedNewIPs:    []string{"192.168.1.1", "192.168.1.3"},
+			expectReplaceCall: true,
+		},
+		{
+			name: "mixed priorities - only highest priority healthy IPs should be set",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.1", Priority: 0},
+				{IP: "192.168.1.2", Priority: 0},
+				{IP: "192.168.1.3", Priority: 1},
+				{IP: "192.168.1.4", Priority: 1},
+			},
+			unhealthyIPs:      []string{},
+			currentIP:         "192.168.1.10",
+			expectedNewIPs:    []string{"192.168.1.1", "192.168.1.2"},
+			expectReplaceCall: true,
+		},
+		{
+			name: "highest priority IPs unhealthy - use next priority level",
+			priorityIPs: []config.PriorityIP{
+				{IP: "192.168.1.1", Priority: 0},
+				{IP: "192.168.1.2", Priority: 0},
+				{IP: "192.168.1.3", Priority: 1},
+				{IP: "192.168.1.4", Priority: 1},
+			},
+			unhealthyIPs:      []string{"192.168.1.1", "192.168.1.2"},
+			currentIP:         "192.168.1.10",
+			expectedNewIPs:    []string{"192.168.1.3", "192.168.1.4"},
+			expectReplaceCall: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// テスト用の設定
+			cfg := &config.Config{
+				CloudflareAPIToken: "test-token",
+				CloudflareZoneIDs: []config.ZoneConfig{
+					{
+						ZoneID: "test-zone",
+						Name:   "default",
+					},
+				},
+				CheckInterval: 1 * time.Second,
+				Origins: []config.OriginConfig{
+					{
+						Name:       "example.com",
+						ZoneName:   "default",
+						RecordType: "A",
+						HealthCheck: config.HealthCheck{
+							Type:     "http",
+							Endpoint: "/health",
+							Timeout:  5,
+						},
+						PriorityFailoverIPs: tt.priorityIPs,
+						FailoverIPs:         []string{"192.168.1.10", "192.168.1.11"},
+						ReturnToPriority:    true,
+					},
+				},
+			}
+
+			// DNSクライアントのモック
+			dnsClientMock := cfmock.NewDNSClientMock()
+			mockClient := &MockDNSClient{dnsClientMock}
+
+			// サービスの作成
+			service := &Service{
+				config:          cfg,
+				dnsClient:       mockClient,
+				stopCh:          make(chan struct{}),
+				failoverIndices: make(map[string]int),
+				dnsClients:      make(map[string]cloudflare.DNSClientInterface),
+				originStatus:    make(map[string]*OriginStatus),
+				zoneMap:         map[string]string{"test-zone": "default"},
+				zoneIDMap:       map[string]string{"default": "test-zone"},
+			}
+
+			origin := cfg.Origins[0]
+			originKey := "default-example.com-A"
+
+			// dnsClientsマップにモッククライアントを追加
+			service.dnsClients[originKey] = dnsClientMock
+
+			// originStatusを初期化（フェイルオーバーIPを使用中）
+			service.originStatus[originKey] = &OriginStatus{
+				CurrentIP:       tt.currentIP,
+				UsingPriority:   false,
+				HealthyPriority: false,
+				LastCheck:       time.Now(),
+			}
+
+			// ヘルスチェッカーのモック
+			checker := hcmock.NewCheckerMock(func(ip string) error {
+				for _, unhealthyIP := range tt.unhealthyIPs {
+					if ip == unhealthyIP {
+						return fmt.Errorf("IP %s is unhealthy", ip)
+					}
+				}
+				return nil
+			})
+
+			// ReplaceRecordsMultipleの呼び出しをトラッキング
+			var actualNewIPs []string
+			replaceCallCount := 0
+			dnsClientMock.ReplaceRecordsMultipleFunc = func(ctx context.Context, name, recordType string, newContents []string) error {
+				replaceCallCount++
+				actualNewIPs = newContents
+				if len(newContents) > 0 {
+					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].UsingPriority = true
+				}
+				return nil
+			}
+
+			// テスト対象のメソッドを実行
+			ctx := context.Background()
+			service.checkPriorityIPs(ctx, origin, checker)
+
+			// 期待通りにReplaceRecordsMultipleが呼ばれたか確認
+			if tt.expectReplaceCall {
+				if replaceCallCount == 0 {
+					t.Errorf("ReplaceRecordsMultiple was not called, expected it to be called")
+					return
+				}
+				
+				// 期待されるIPが全て含まれているか確認
+				if len(actualNewIPs) != len(tt.expectedNewIPs) {
+					t.Errorf("ReplaceRecordsMultiple called with %d IPs, expected %d. Got: %v, Expected: %v", 
+						len(actualNewIPs), len(tt.expectedNewIPs), actualNewIPs, tt.expectedNewIPs)
+					return
+				}
+				
+				// 順序は関係ないので、すべてのIPが含まれているか確認
+				expectedSet := make(map[string]bool)
+				for _, ip := range tt.expectedNewIPs {
+					expectedSet[ip] = true
+				}
+				for _, ip := range actualNewIPs {
+					if !expectedSet[ip] {
+						t.Errorf("Unexpected IP %s in result. Got: %v, Expected: %v", ip, actualNewIPs, tt.expectedNewIPs)
+					}
+				}
+			} else {
+				if replaceCallCount > 0 {
+					t.Errorf("ReplaceRecordsMultiple was called %d times, expected 0", replaceCallCount)
 				}
 			}
 		})

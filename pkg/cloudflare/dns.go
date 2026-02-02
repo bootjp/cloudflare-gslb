@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"context"
+	"log"
 	"time"
 
 	cf "github.com/cloudflare/cloudflare-go/v6"
@@ -24,6 +25,7 @@ type DNSClientInterface interface {
 	CreateDNSRecord(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
 	UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
 	ReplaceRecords(ctx context.Context, name, recordType, newContent string) error
+	ReplaceRecordsMultiple(ctx context.Context, name, recordType string, newContents []string) error
 	GetZoneID() string
 }
 
@@ -198,5 +200,57 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 		recordsToDelete = records
 	}
 
+	return c.deleteRecords(ctx, recordsToDelete)
+}
+
+// ReplaceRecordsMultiple replaces all records with the given contents (supports multiple IPs with the same priority)
+func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType string, newContents []string) error {
+	if len(newContents) == 0 {
+		log.Printf("Warning: ReplaceRecordsMultiple called with empty contents for %s (%s)", name, recordType)
+		return nil
+	}
+
+	// If only one content, use the single record replace method
+	if len(newContents) == 1 {
+		return c.ReplaceRecords(ctx, name, recordType, newContents[0])
+	}
+
+	records, err := c.GetDNSRecords(ctx, name, recordType)
+	if err != nil {
+		return err
+	}
+
+	// Create a map of desired contents for quick lookup
+	desiredContents := make(map[string]bool)
+	for _, content := range newContents {
+		desiredContents[content] = true
+	}
+
+	// Find records to keep, records to delete, and contents to create
+	contentsToCreate := make(map[string]bool)
+	for _, content := range newContents {
+		contentsToCreate[content] = true
+	}
+
+	var recordsToDelete []dns.RecordResponse
+	for _, record := range records {
+		if desiredContents[record.Content] {
+			// This record has desired content, keep it and remove from create list
+			delete(contentsToCreate, record.Content)
+		} else {
+			// This record doesn't have desired content, delete it
+			recordsToDelete = append(recordsToDelete, record)
+		}
+	}
+
+	// Create new records for contents that don't exist
+	for content := range contentsToCreate {
+		_, err := c.CreateDNSRecord(ctx, name, recordType, content)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Delete records that are no longer needed
 	return c.deleteRecords(ctx, recordsToDelete)
 }

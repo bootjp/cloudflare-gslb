@@ -10,12 +10,13 @@ import (
 
 // DNSClientMock はCloudflare DNSクライアントのモック
 type DNSClientMock struct {
-	Records             map[string][]dns.RecordResponse
-	GetDNSRecordsFunc   func(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error)
-	DeleteDNSRecordFunc func(ctx context.Context, recordID string) error
-	CreateDNSRecordFunc func(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
-	UpdateDNSRecordFunc func(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
-	ReplaceRecordsFunc  func(ctx context.Context, name, recordType, newContent string) error
+	Records                    map[string][]dns.RecordResponse
+	GetDNSRecordsFunc          func(ctx context.Context, name, recordType string) ([]dns.RecordResponse, error)
+	DeleteDNSRecordFunc        func(ctx context.Context, recordID string) error
+	CreateDNSRecordFunc        func(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
+	UpdateDNSRecordFunc        func(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
+	ReplaceRecordsFunc         func(ctx context.Context, name, recordType, newContent string) error
+	ReplaceRecordsMultipleFunc func(ctx context.Context, name, recordType string, newContents []string) error
 }
 
 // インターフェースに準拠していることを確認
@@ -104,6 +105,28 @@ func (m *DNSClientMock) ReplaceRecords(ctx context.Context, name, recordType, ne
 			Content: newContent,
 		},
 	}
+
+	return nil
+}
+
+// ReplaceRecordsMultiple はReplaceRecordsMultipleFuncを呼び出すか、デフォルトの実装を使用する
+func (m *DNSClientMock) ReplaceRecordsMultiple(ctx context.Context, name, recordType string, newContents []string) error {
+	if m.ReplaceRecordsMultipleFunc != nil {
+		return m.ReplaceRecordsMultipleFunc(ctx, name, recordType, newContents)
+	}
+
+	// レコードを置き換える
+	key := fmt.Sprintf("%s-%s", name, recordType)
+	var records []dns.RecordResponse
+	for i, content := range newContents {
+		records = append(records, dns.RecordResponse{
+			ID:      fmt.Sprintf("mock-record-%s-%s-%d", name, recordType, i),
+			Name:    name,
+			Type:    dns.RecordResponseType(recordType),
+			Content: content,
+		})
+	}
+	m.Records[key] = records
 
 	return nil
 }

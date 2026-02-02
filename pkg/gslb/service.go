@@ -255,20 +255,37 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 	// 優先度順にソートされたIPリストを取得
 	priorityIPs := origin.GetPriorityIPs()
 
-	// 最も優先度の高い健全なIPを見つける
-	var healthyPriorityIP string
+	// 最も優先度の高い健全なIPを見つける（同一優先度のIPはすべてチェック）
+	var healthyPriorityIPs []string
+	const noPriorityFound = -1
+	foundPriority := noPriorityFound
+
 	for _, ip := range priorityIPs {
+		// このIPの優先度を取得
+		var currentPriority int
+		for _, p := range origin.PriorityFailoverIPs {
+			if p.IP == ip {
+				currentPriority = p.Priority
+				break
+			}
+		}
+
+		// すでに健全なIPが見つかっている場合、異なる優先度のIPはスキップ
+		if foundPriority != noPriorityFound && currentPriority != foundPriority {
+			break
+		}
+
 		if err := checker.Check(ip); err != nil {
 			log.Printf("Priority IP %s is still unhealthy: %v", ip, err)
 			continue
 		}
 		log.Printf("Priority IP %s is healthy", ip)
-		healthyPriorityIP = ip
-		break // 最も優先度の高い健全なIPを使用
+		healthyPriorityIPs = append(healthyPriorityIPs, ip)
+		foundPriority = currentPriority
 	}
 
-	if healthyPriorityIP != "" {
-		log.Printf("Found healthy priority IP %s for %s, switching back", healthyPriorityIP, origin.Name)
+	if len(healthyPriorityIPs) > 0 {
+		log.Printf("Found %d healthy priority IP(s) for %s: %v, switching back", len(healthyPriorityIPs), origin.Name, healthyPriorityIPs)
 
 		s.originStatusMutex.Lock()
 		status.HealthyPriority = true
@@ -278,21 +295,22 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		// 優先IPに戻すためのDNSレコード更新
 		dnsClient := s.getDNSClientForOrigin(origin)
 
-		if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, healthyPriorityIP); err != nil {
-			log.Printf("Failed to switch back to priority IP for %s: %v", origin.Name, err)
+		if err := dnsClient.ReplaceRecordsMultiple(ctx, origin.Name, origin.RecordType, healthyPriorityIPs); err != nil {
+			log.Printf("Failed to switch back to priority IP(s) for %s: %v", origin.Name, err)
 			return
 		}
 
-		// 状態を更新
+		// 状態を更新（最初のIPを代表として保存）
 		s.originStatusMutex.Lock()
-		status.CurrentIP = healthyPriorityIP
+		status.CurrentIP = healthyPriorityIPs[0]
 		status.UsingPriority = true
 		s.originStatusMutex.Unlock()
 
-		log.Printf("Successfully switched back to priority IP %s for %s", healthyPriorityIP, origin.Name)
+		newIPsStr := fmt.Sprintf("%v", healthyPriorityIPs)
+		log.Printf("Successfully switched back to priority IP(s) %s for %s", newIPsStr, origin.Name)
 
 		// 通知を送信
-		s.sendNotifications(ctx, origin, oldIP, healthyPriorityIP, "Priority IP is healthy again", true, false)
+		s.sendNotifications(ctx, origin, oldIP, healthyPriorityIPs[0], "Priority IP is healthy again", true, false)
 	}
 }
 

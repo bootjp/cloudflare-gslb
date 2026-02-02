@@ -61,6 +61,32 @@ func (o *OriginConfig) GetPriorityIPs() []string {
 	return ips
 }
 
+// GetPriorityIPsByPriority は指定された優先度を持つすべてのIPアドレスを返す
+func (o *OriginConfig) GetPriorityIPsByPriority(priority int) []string {
+	var ips []string
+	for _, p := range o.PriorityFailoverIPs {
+		if p.Priority == priority {
+			ips = append(ips, p.IP)
+		}
+	}
+	return ips
+}
+
+// GetLowestPriority は最も高い優先度（最も小さい優先度値）を返す
+func (o *OriginConfig) GetLowestPriority() (int, bool) {
+	if len(o.PriorityFailoverIPs) == 0 {
+		return 0, false
+	}
+
+	minPriority := o.PriorityFailoverIPs[0].Priority
+	for _, p := range o.PriorityFailoverIPs[1:] {
+		if p.Priority < minPriority {
+			minPriority = p.Priority
+		}
+	}
+	return minPriority, true
+}
+
 // IsPriorityIP は指定されたIPが優先IPかどうかを返す
 func (o *OriginConfig) IsPriorityIP(ip string) bool {
 	for _, priorityIP := range o.PriorityFailoverIPs {
