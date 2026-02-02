@@ -2,6 +2,7 @@
 /gslb
 /gslb-oneshot
 /oneshot
+/migrate
 *.exe
 *.exe~
 *.dll
