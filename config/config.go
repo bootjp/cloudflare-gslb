@@ -2,10 +2,17 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"time"
 )
+
+// SingleRecordTypes は複数のレコードを設定できないレコードタイプのリスト（RFC準拠）
+var SingleRecordTypes = map[string]bool{
+	"CNAME": true, // CNAMEレコードは同じ名前に複数設定できない
+	"SOA":   true, // SOAレコードは1つだけ
+}
 
 // Config はアプリケーションの設定を表す構造体
 type Config struct {
@@ -25,7 +32,7 @@ type ZoneConfig struct {
 // PriorityIP は優先IPアドレスとその優先度を表す構造体
 type PriorityIP struct {
 	IP       string `json:"ip"`       // IPアドレス
-	Priority int    `json:"priority"` // 優先度（小さいほど優先）
+	Priority int    `json:"priority"` // 優先度（大きいほど優先）
 }
 
 // OriginConfig はオリジンサーバーの設定を表す構造体
@@ -40,17 +47,17 @@ type OriginConfig struct {
 	ReturnToPriority    bool         `json:"return_to_priority"`    // 正常に戻ったときに優先IPに戻すかどうか
 }
 
-// GetPriorityIPs は優先度順にソートされたIPアドレスのリストを返す
+// GetPriorityIPs は優先度順にソートされたIPアドレスのリストを返す（優先度が大きいほど優先）
 func (o *OriginConfig) GetPriorityIPs() []string {
 	if len(o.PriorityFailoverIPs) == 0 {
 		return nil
 	}
 
-	// 優先度でソートしたコピーを作成
+	// 優先度でソートしたコピーを作成（降順：大きい値が先）
 	sorted := make([]PriorityIP, len(o.PriorityFailoverIPs))
 	copy(sorted, o.PriorityFailoverIPs)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Priority < sorted[j].Priority
+		return sorted[i].Priority > sorted[j].Priority
 	})
 
 	// IPアドレスのみを返す
@@ -72,19 +79,19 @@ func (o *OriginConfig) GetPriorityIPsByPriority(priority int) []string {
 	return ips
 }
 
-// GetLowestPriority は最も高い優先度（最も小さい優先度値）を返す
-func (o *OriginConfig) GetLowestPriority() (int, bool) {
+// GetHighestPriority は最も高い優先度（最も大きい優先度値）を返す
+func (o *OriginConfig) GetHighestPriority() (int, bool) {
 	if len(o.PriorityFailoverIPs) == 0 {
 		return 0, false
 	}
 
-	minPriority := o.PriorityFailoverIPs[0].Priority
+	maxPriority := o.PriorityFailoverIPs[0].Priority
 	for _, p := range o.PriorityFailoverIPs[1:] {
-		if p.Priority < minPriority {
-			minPriority = p.Priority
+		if p.Priority > maxPriority {
+			maxPriority = p.Priority
 		}
 	}
-	return minPriority, true
+	return maxPriority, true
 }
 
 // IsPriorityIP は指定されたIPが優先IPかどうかを返す
@@ -95,6 +102,33 @@ func (o *OriginConfig) IsPriorityIP(ip string) bool {
 		}
 	}
 	return false
+}
+
+// IsSingleRecordType は複数のレコードを設定できないレコードタイプかどうかを返す
+func (o *OriginConfig) IsSingleRecordType() bool {
+	return SingleRecordTypes[o.RecordType]
+}
+
+// ValidateMultipleRecords は同一優先度で複数のIPが設定されている場合にレコードタイプをチェックする
+func (o *OriginConfig) ValidateMultipleRecords() error {
+	if !o.IsSingleRecordType() {
+		return nil
+	}
+
+	// 各優先度でIPの数をカウント
+	priorityCounts := make(map[int]int)
+	for _, p := range o.PriorityFailoverIPs {
+		priorityCounts[p.Priority]++
+	}
+
+	// 同一優先度で複数のIPが設定されている場合はエラー
+	for priority, count := range priorityCounts {
+		if count > 1 {
+			return fmt.Errorf("record type %s cannot have multiple records with the same priority %d (RFC violation)", o.RecordType, priority)
+		}
+	}
+
+	return nil
 }
 
 // HealthCheck はヘルスチェックの設定を表す構造体
@@ -204,6 +238,11 @@ func LoadConfig(path string) (*Config, error) {
 			FailoverIPs:         rawOrigin.FailoverIPs,
 			Proxied:             rawOrigin.Proxied,
 			ReturnToPriority:    rawOrigin.ReturnToPriority,
+		}
+
+		// 複数レコードの検証（RFC準拠チェック）
+		if err := origins[i].ValidateMultipleRecords(); err != nil {
+			return nil, fmt.Errorf("origin %s: %w", rawOrigin.Name, err)
 		}
 	}
 

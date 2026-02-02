@@ -516,19 +516,19 @@ func TestPriorityFailoverIPsNewFormat(t *testing.T) {
 		t.Errorf("Expected first priority value = 2, got %d", origin.PriorityFailoverIPs[0].Priority)
 	}
 
-	// GetPriorityIPs should return IPs sorted by priority
+	// GetPriorityIPs should return IPs sorted by priority (higher priority value = first)
 	sortedIPs := origin.GetPriorityIPs()
 	if len(sortedIPs) != 3 {
 		t.Errorf("Expected 3 sorted priority IPs, got %d", len(sortedIPs))
 	}
-	if sortedIPs[0] != "192.168.1.1" {
-		t.Errorf("Expected first sorted IP = '192.168.1.1', got '%s'", sortedIPs[0])
+	if sortedIPs[0] != "192.168.1.3" {
+		t.Errorf("Expected first sorted IP = '192.168.1.3' (priority 2), got '%s'", sortedIPs[0])
 	}
 	if sortedIPs[1] != "192.168.1.2" {
-		t.Errorf("Expected second sorted IP = '192.168.1.2', got '%s'", sortedIPs[1])
+		t.Errorf("Expected second sorted IP = '192.168.1.2' (priority 1), got '%s'", sortedIPs[1])
 	}
-	if sortedIPs[2] != "192.168.1.3" {
-		t.Errorf("Expected third sorted IP = '192.168.1.3', got '%s'", sortedIPs[2])
+	if sortedIPs[2] != "192.168.1.1" {
+		t.Errorf("Expected third sorted IP = '192.168.1.1' (priority 0), got '%s'", sortedIPs[2])
 	}
 }
 
@@ -564,7 +564,7 @@ func TestGetPriorityIPs(t *testing.T) {
 		t.Error("Expected nil for empty priority IPs")
 	}
 
-	// Test sorting by priority
+	// Test sorting by priority (higher priority value = first)
 	origin := OriginConfig{
 		PriorityFailoverIPs: []PriorityIP{
 			{IP: "192.168.1.3", Priority: 2},
@@ -574,7 +574,7 @@ func TestGetPriorityIPs(t *testing.T) {
 	}
 
 	sortedIPs := origin.GetPriorityIPs()
-	expected := []string{"192.168.1.1", "192.168.1.2", "192.168.1.3"}
+	expected := []string{"192.168.1.3", "192.168.1.2", "192.168.1.1"} // 降順：2, 1, 0
 	for i, ip := range sortedIPs {
 		if ip != expected[i] {
 			t.Errorf("Expected IP at index %d = '%s', got '%s'", i, expected[i], ip)
@@ -687,8 +687,8 @@ func TestGetPriorityIPsByPriority(t *testing.T) {
 	}
 }
 
-// TestGetLowestPriority tests the GetLowestPriority method
-func TestGetLowestPriority(t *testing.T) {
+// TestGetHighestPriority tests the GetHighestPriority method
+func TestGetHighestPriority(t *testing.T) {
 	// Test with non-empty list
 	origin := OriginConfig{
 		PriorityFailoverIPs: []PriorityIP{
@@ -698,18 +698,104 @@ func TestGetLowestPriority(t *testing.T) {
 		},
 	}
 
-	priority, ok := origin.GetLowestPriority()
+	priority, ok := origin.GetHighestPriority()
 	if !ok {
-		t.Error("Expected GetLowestPriority to return true for non-empty list")
+		t.Error("Expected GetHighestPriority to return true for non-empty list")
 	}
-	if priority != 0 {
-		t.Errorf("Expected lowest priority = 0, got %d", priority)
+	if priority != 2 {
+		t.Errorf("Expected highest priority = 2, got %d", priority)
 	}
 
 	// Test with empty list
 	emptyOrigin := OriginConfig{}
-	_, ok = emptyOrigin.GetLowestPriority()
+	_, ok = emptyOrigin.GetHighestPriority()
 	if ok {
-		t.Error("Expected GetLowestPriority to return false for empty list")
+		t.Error("Expected GetHighestPriority to return false for empty list")
+	}
+}
+
+// TestValidateMultipleRecords tests the ValidateMultipleRecords method
+func TestValidateMultipleRecords(t *testing.T) {
+	// Test A record with multiple IPs at same priority - should be allowed
+	aRecord := OriginConfig{
+		RecordType: "A",
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 0},
+			{IP: "192.168.1.2", Priority: 0},
+		},
+	}
+	if err := aRecord.ValidateMultipleRecords(); err != nil {
+		t.Errorf("A record should allow multiple IPs with same priority: %v", err)
+	}
+
+	// Test AAAA record with multiple IPs at same priority - should be allowed
+	aaaaRecord := OriginConfig{
+		RecordType: "AAAA",
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "2001:db8::1", Priority: 0},
+			{IP: "2001:db8::2", Priority: 0},
+		},
+	}
+	if err := aaaaRecord.ValidateMultipleRecords(); err != nil {
+		t.Errorf("AAAA record should allow multiple IPs with same priority: %v", err)
+	}
+
+	// Test CNAME record with multiple IPs at same priority - should NOT be allowed
+	cnameRecord := OriginConfig{
+		RecordType: "CNAME",
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "target1.example.com", Priority: 0},
+			{IP: "target2.example.com", Priority: 0},
+		},
+	}
+	if err := cnameRecord.ValidateMultipleRecords(); err == nil {
+		t.Error("CNAME record should NOT allow multiple records with same priority")
+	}
+
+	// Test CNAME record with single IP at each priority - should be allowed
+	cnameRecordSingle := OriginConfig{
+		RecordType: "CNAME",
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "target1.example.com", Priority: 0},
+			{IP: "target2.example.com", Priority: 1},
+		},
+	}
+	if err := cnameRecordSingle.ValidateMultipleRecords(); err != nil {
+		t.Errorf("CNAME record should allow single record per priority: %v", err)
+	}
+
+	// Test SOA record with multiple IPs at same priority - should NOT be allowed
+	soaRecord := OriginConfig{
+		RecordType: "SOA",
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "ns1.example.com", Priority: 0},
+			{IP: "ns2.example.com", Priority: 0},
+		},
+	}
+	if err := soaRecord.ValidateMultipleRecords(); err == nil {
+		t.Error("SOA record should NOT allow multiple records with same priority")
+	}
+}
+
+// TestIsSingleRecordType tests the IsSingleRecordType method
+func TestIsSingleRecordType(t *testing.T) {
+	tests := []struct {
+		recordType string
+		expected   bool
+	}{
+		{"A", false},
+		{"AAAA", false},
+		{"CNAME", true},
+		{"SOA", true},
+		{"MX", false},
+		{"TXT", false},
+	}
+
+	for _, tt := range tests {
+		origin := OriginConfig{RecordType: tt.recordType}
+		result := origin.IsSingleRecordType()
+		if result != tt.expected {
+			t.Errorf("IsSingleRecordType(%s) = %v, expected %v", tt.recordType, result, tt.expected)
+		}
 	}
 }

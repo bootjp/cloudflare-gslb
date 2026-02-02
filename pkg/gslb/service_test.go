@@ -523,25 +523,25 @@ func TestPriorityBasedSelection(t *testing.T) {
 		{
 			name: "select highest priority healthy IP",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.3", Priority: 2},
-				{IP: "192.168.1.1", Priority: 0}, // 最も高い優先度
+				{IP: "192.168.1.3", Priority: 2}, // 最も高い優先度
+				{IP: "192.168.1.1", Priority: 0},
 				{IP: "192.168.1.2", Priority: 1},
 			},
 			unhealthyIPs:      []string{},
 			currentIP:         "192.168.1.4", // フェイルオーバーIP
-			expectedNewIP:     "192.168.1.1", // 最も高い優先度のIP
+			expectedNewIP:     "192.168.1.3", // 最も高い優先度のIP（priority 2）
 			expectReplaceCall: true,
 		},
 		{
 			name: "select second highest priority when first is unhealthy",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.3", Priority: 2},
-				{IP: "192.168.1.1", Priority: 0}, // 不健全
+				{IP: "192.168.1.3", Priority: 2}, // 不健全
+				{IP: "192.168.1.1", Priority: 0},
 				{IP: "192.168.1.2", Priority: 1}, // 次に高い優先度
 			},
-			unhealthyIPs:      []string{"192.168.1.1"}, // 最も高い優先度のIPが不健全
+			unhealthyIPs:      []string{"192.168.1.3"}, // 最も高い優先度のIPが不健全
 			currentIP:         "192.168.1.4",           // フェイルオーバーIP
-			expectedNewIP:     "192.168.1.2",           // 2番目に高い優先度のIP
+			expectedNewIP:     "192.168.1.2",           // 2番目に高い優先度のIP（priority 1）
 			expectReplaceCall: true,
 		},
 		{
@@ -672,9 +672,9 @@ func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
 		{
 			name: "all same priority IPs are healthy - all should be set",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.1", Priority: 0},
-				{IP: "192.168.1.2", Priority: 0},
-				{IP: "192.168.1.3", Priority: 0},
+				{IP: "192.168.1.1", Priority: 2},
+				{IP: "192.168.1.2", Priority: 2},
+				{IP: "192.168.1.3", Priority: 2},
 			},
 			unhealthyIPs:      []string{},
 			currentIP:         "192.168.1.10", // フェイルオーバーIP
@@ -684,9 +684,9 @@ func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
 		{
 			name: "one of same priority IPs is unhealthy - only healthy ones should be set",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.1", Priority: 0},
-				{IP: "192.168.1.2", Priority: 0},
-				{IP: "192.168.1.3", Priority: 0},
+				{IP: "192.168.1.1", Priority: 2},
+				{IP: "192.168.1.2", Priority: 2},
+				{IP: "192.168.1.3", Priority: 2},
 			},
 			unhealthyIPs:      []string{"192.168.1.2"},
 			currentIP:         "192.168.1.10",
@@ -696,27 +696,27 @@ func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
 		{
 			name: "mixed priorities - only highest priority healthy IPs should be set",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.1", Priority: 0},
-				{IP: "192.168.1.2", Priority: 0},
-				{IP: "192.168.1.3", Priority: 1},
-				{IP: "192.168.1.4", Priority: 1},
+				{IP: "192.168.1.1", Priority: 1}, // 低い優先度
+				{IP: "192.168.1.2", Priority: 1},
+				{IP: "192.168.1.3", Priority: 2}, // 高い優先度
+				{IP: "192.168.1.4", Priority: 2},
 			},
 			unhealthyIPs:      []string{},
 			currentIP:         "192.168.1.10",
-			expectedNewIPs:    []string{"192.168.1.1", "192.168.1.2"},
+			expectedNewIPs:    []string{"192.168.1.3", "192.168.1.4"}, // priority 2のIPのみ
 			expectReplaceCall: true,
 		},
 		{
 			name: "highest priority IPs unhealthy - use next priority level",
 			priorityIPs: []config.PriorityIP{
-				{IP: "192.168.1.1", Priority: 0},
-				{IP: "192.168.1.2", Priority: 0},
-				{IP: "192.168.1.3", Priority: 1},
-				{IP: "192.168.1.4", Priority: 1},
+				{IP: "192.168.1.1", Priority: 1}, // 低い優先度
+				{IP: "192.168.1.2", Priority: 1},
+				{IP: "192.168.1.3", Priority: 2}, // 高い優先度（不健全）
+				{IP: "192.168.1.4", Priority: 2},
 			},
-			unhealthyIPs:      []string{"192.168.1.1", "192.168.1.2"},
+			unhealthyIPs:      []string{"192.168.1.3", "192.168.1.4"}, // 最も高い優先度のIPが不健全
 			currentIP:         "192.168.1.10",
-			expectedNewIPs:    []string{"192.168.1.3", "192.168.1.4"},
+			expectedNewIPs:    []string{"192.168.1.1", "192.168.1.2"}, // priority 1のIPを使用
 			expectReplaceCall: true,
 		},
 	}

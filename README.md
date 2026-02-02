@@ -138,7 +138,7 @@ Example configuration file:
 - `origins`: Array of origin configurations
   - `name`: DNS record name (without the zone part)
   - `zone_name`: The name of the zone this record belongs to (must match one of the names in `cloudflare_zones`)
-  - `record_type`: DNS record type (`A` or `AAAA`)
+  - `record_type`: DNS record type (`A` or `AAAA`). Note: Record types that RFC prohibits from having multiple records (e.g., CNAME, SOA) will error if multiple IPs share the same priority.
   - `health_check`: Health check configuration
     - `type`: Health check type (`http`, `https`, or `icmp`)
     - `endpoint`: HTTP/HTTPS endpoint path
@@ -146,9 +146,9 @@ Example configuration file:
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
-  - `priority_failover_ips`: Primary IP addresses to use when healthy. Can be specified with priority values (smaller values = higher priority)
+  - `priority_failover_ips`: Primary IP addresses to use when healthy. Can be specified with priority values (higher values = higher priority)
     - `ip`: IP address
-    - `priority`: Priority value (0 = highest priority)
+    - `priority`: Priority value (higher value = higher priority, e.g., priority 2 > priority 1 > priority 0)
   - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
   - `proxied`: Whether to enable Cloudflare proxy for this record
   - `return_to_priority`: Whether to return to priority IPs when they become healthy again
@@ -195,13 +195,13 @@ By combining priority IPs and failover IPs, you can optimize resource efficiency
 2. During outages, traffic is directed to failover IPs (e.g., cloud VMs with pay-as-you-go pricing)
 3. When the priority IP recovers, traffic automatically returns to the highest priority healthy IP (if `return_to_priority: true`)
 
-With priority values, you can define multiple priority servers with explicit ordering:
+With priority values, you can define multiple priority servers with explicit ordering (higher value = higher priority):
 
 ```json
 "priority_failover_ips": [
-  {"ip": "192.168.1.1", "priority": 0},
+  {"ip": "192.168.1.1", "priority": 2},
   {"ip": "192.168.1.2", "priority": 1},
-  {"ip": "192.168.1.3", "priority": 2}
+  {"ip": "192.168.1.3", "priority": 0}
 ]
 ```
 
@@ -211,18 +211,20 @@ When multiple IPs have the same priority value, all healthy IPs at that priority
 
 ```json
 "priority_failover_ips": [
-  {"ip": "192.168.1.1", "priority": 0},
-  {"ip": "192.168.1.2", "priority": 0},
+  {"ip": "192.168.1.1", "priority": 2},
+  {"ip": "192.168.1.2", "priority": 2},
   {"ip": "192.168.1.3", "priority": 1}
 ]
 ```
 
 In this example:
-- Both `192.168.1.1` and `192.168.1.2` have priority 0, so when returning to priority IPs, both will be set as DNS records (enabling DNS round-robin)
-- If all priority 0 IPs are unhealthy, the system will use `192.168.1.3` (priority 1)
+- Both `192.168.1.1` and `192.168.1.2` have priority 2 (highest), so when returning to priority IPs, both will be set as DNS records (enabling DNS round-robin)
+- If all priority 2 IPs are unhealthy, the system will use `192.168.1.3` (priority 1)
 
-When returning to priority IPs, the system will select all healthy IPs at the highest priority (lowest value) level. This allows you to:
-- Define a primary server (priority 0) and a secondary server (priority 1)
+**Note:** Record types that RFC prohibits from having multiple records (e.g., CNAME, SOA) will error if multiple IPs share the same priority.
+
+When returning to priority IPs, the system will select all healthy IPs at the highest priority (highest value) level. This allows you to:
+- Define a primary server (priority 2) and a secondary server (priority 1)
 - If the primary server fails, traffic goes to failover IPs
 - When health recovers, traffic returns to the secondary server if primary is still unhealthy
 - Traffic automatically returns to the primary server when it becomes healthy again
