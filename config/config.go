@@ -108,8 +108,15 @@ func parsePriorityFailoverIPs(raw json.RawMessage) ([]PriorityIP, error) {
 	// まず新しい形式（PriorityIP配列）でパースを試みる
 	var priorityIPs []PriorityIP
 	if err := json.Unmarshal(raw, &priorityIPs); err == nil {
-		// PriorityIP形式でパースできた場合、IPが空でないかチェック
-		if len(priorityIPs) > 0 && priorityIPs[0].IP != "" {
+		// PriorityIP形式でパースできた場合、すべての要素のIPが空でないかチェック
+		isNewFormat := len(priorityIPs) > 0
+		for _, p := range priorityIPs {
+			if p.IP == "" {
+				isNewFormat = false
+				break
+			}
+		}
+		if isNewFormat {
 			return priorityIPs, nil
 		}
 	}

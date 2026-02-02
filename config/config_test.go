@@ -580,4 +580,66 @@ func TestGetPriorityIPs(t *testing.T) {
 			t.Errorf("Expected IP at index %d = '%s', got '%s'", i, expected[i], ip)
 		}
 	}
+
+	// Test with empty IP strings (edge case)
+	emptyIPsOrigin := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "", Priority: 0},
+			{IP: "", Priority: 1},
+		},
+	}
+	// GetPriorityIPs should still return the IPs even if they are empty
+	// The system should handle this gracefully
+	emptyIPs := emptyIPsOrigin.GetPriorityIPs()
+	if len(emptyIPs) != 2 {
+		t.Errorf("Expected 2 IPs, got %d", len(emptyIPs))
+	}
+}
+
+// TestParsePriorityFailoverIPsEdgeCases tests edge cases in priority IP parsing
+func TestParsePriorityFailoverIPsEdgeCases(t *testing.T) {
+	// Test with mixed empty and non-empty IPs (new format)
+	// This should fall back to string array parsing since not all IPs are valid
+	testConfigContent := `{
+		"cloudflare_api_token": "test-token",
+		"cloudflare_zone_id": "test-zone",
+		"check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "www",
+				"record_type": "A",
+				"health_check": {
+					"type": "http",
+					"endpoint": "/health",
+					"host": "www.example.com",
+					"timeout": 5
+				},
+				"priority_failover_ips": [
+					{"ip": "192.168.1.1", "priority": 0},
+					{"ip": "", "priority": 1}
+				],
+				"failover_ips": ["192.168.1.3"]
+			}
+		]
+	}`
+
+	tmpfile, err := os.CreateTemp("", "config_test_*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	// This should fail to parse as new format (due to empty IP) and try string format
+	// String format parsing will also fail since the structure is not a string array
+	_, err = LoadConfig(tmpfile.Name())
+	if err == nil {
+		t.Error("Expected error for config with empty IP in new format, but got none")
+	}
 }
