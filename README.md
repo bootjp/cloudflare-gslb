@@ -360,6 +360,43 @@ This is useful for:
 - Kubernetes CronJobs
 - Testing configuration
 
+### Config Migration Tool
+
+If you have an existing configuration file using the old format (string array for `priority_failover_ips`), you can use the migration tool to convert it to the new format with explicit priority values:
+
+```bash
+# Build the migration tool
+go build -o migrate ./cmd/migrate
+
+# Migrate a config file (output to stdout)
+./migrate -input old_config.json
+
+# Migrate and save to a new file
+./migrate -input old_config.json -output new_config.json
+```
+
+The migration tool will:
+- Convert old string array format `["ip1", "ip2", "ip3"]` to the new format with explicit priorities
+- Assign priority values based on array position (first IP gets highest priority)
+- Preserve configs that are already in the new format
+- Log which origins were migrated
+
+**Example migration:**
+
+Old format:
+```json
+"priority_failover_ips": ["192.168.1.1", "192.168.1.2", "192.168.1.3"]
+```
+
+New format after migration:
+```json
+"priority_failover_ips": [
+  {"ip": "192.168.1.1", "priority": 2},
+  {"ip": "192.168.1.2", "priority": 1},
+  {"ip": "192.168.1.3", "priority": 0}
+]
+```
+
 ### Docker Usage
 
 The application is available as Docker images for both continuous and one-shot modes:
