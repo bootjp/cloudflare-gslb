@@ -39,7 +39,7 @@ type PriorityIP struct {
 type OriginConfig struct {
 	Name                string       `json:"name"`
 	ZoneName            string       `json:"zone_name"`   // 対象のゾーン名
-	RecordType          string       `json:"record_type"` // "A" または "AAAA"
+	RecordType          string       `json:"record_type"` // DNSレコードタイプ（例: "A", "AAAA", "CNAME", "MX", "TXT" など）
 	HealthCheck         HealthCheck  `json:"health_check"`
 	PriorityFailoverIPs []PriorityIP `json:"priority_failover_ips"` // 優先的に使用するフェイルオーバー用のIPアドレスリスト
 	FailoverIPs         []string     `json:"failover_ips"`          // フェイルオーバー用のIPアドレスリスト
