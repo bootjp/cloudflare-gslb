@@ -32,7 +32,7 @@ type ZoneConfig struct {
 // PriorityIP は優先IPアドレスとその優先度を表す構造体
 type PriorityIP struct {
 	IP       string `json:"ip"`       // IPアドレス
-	Priority int    `json:"priority"` // 優先度（大きいほど優先）
+	Priority int    `json:"priority"` // 優先度（0以上の整数のみ有効。値が大きいほど優先度が高い）
 }
 
 // OriginConfig はオリジンサーバーの設定を表す構造体
