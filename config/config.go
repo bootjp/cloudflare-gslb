@@ -205,8 +205,12 @@ func parsePriorityFailoverIPs(raw json.RawMessage) ([]PriorityIP, error) {
 			return priorityIPs, nil
 		}
 		// ここに来るのは priorityIPs が空、またはすべて IP が空文字の場合。
-		// これは古い形式（文字列配列）からのデコード結果である可能性が高いので、
-		// エラーにはせず古い形式でのパースにフォールバックする。
+		// priorityIPs が空の場合は、古い形式（文字列配列）でのパースにフォールバックする。
+		// priorityIPs が空でないにもかかわらずすべての IP が空文字の場合は、
+		// 新旧いずれの形式としても妥当ではないためエラーとする。
+		if len(priorityIPs) > 0 {
+			return nil, fmt.Errorf("priority_failover_ips: all ip values are empty")
+		}
 	}
 
 	// 古い形式（文字列配列）でパースを試みる
