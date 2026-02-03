@@ -184,11 +184,14 @@ func parsePriorityFailoverIPs(raw json.RawMessage) ([]PriorityIP, error) {
 	}
 
 	// 文字列配列をPriorityIP配列に変換（インデックス順に優先度を設定）
+	// 文字列配列をPriorityIP配列に変換
+	// 古い形式では配列の先頭にあるIPほど優先度が高いとみなし、
+	// 先頭のIPに最大のPriority値が割り当てられるように変換する
 	priorityIPs = make([]PriorityIP, len(ips))
 	for i, ip := range ips {
 		priorityIPs[i] = PriorityIP{
 			IP:       ip,
-			Priority: i, // 配列のインデックスを優先度として使用
+			Priority: len(ips) - 1 - i, // 先頭のIPが最大のPriority値を持つようにする
 		}
 	}
 
