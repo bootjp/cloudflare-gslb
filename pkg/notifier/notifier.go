@@ -22,9 +22,14 @@ type FailoverEvent struct {
 }
 
 // GetNewIPsDisplay returns a display string for new IPs
+// When multiple IPs are activated, returns comma-separated list.
+// When a single IP is activated, returns that IP from NewIPs if available, otherwise falls back to NewIP.
 func (e FailoverEvent) GetNewIPsDisplay() string {
-	if len(e.NewIPs) > 0 {
+	if len(e.NewIPs) > 1 {
 		return strings.Join(e.NewIPs, ", ")
+	}
+	if len(e.NewIPs) == 1 {
+		return e.NewIPs[0]
 	}
 	return e.NewIP
 }
