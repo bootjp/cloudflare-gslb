@@ -176,7 +176,7 @@ You can also use the old format for `priority_failover_ips` as a simple string a
 "priority_failover_ips": ["192.168.1.1", "192.168.1.2"]
 ```
 
-In this case, the array index will be used as the priority value (0 for the first element, 1 for the second, etc.).
+In this case, priorities are assigned based on array position, with the first element having the highest priority, the second the next highest, and so on (internally derived from the array index in inverted order).
 
 ### Failover IP List Behavior
 
