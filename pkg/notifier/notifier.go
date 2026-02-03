@@ -23,7 +23,7 @@ type FailoverEvent struct {
 
 // GetNewIPsDisplay returns a display string for new IPs
 func (e FailoverEvent) GetNewIPsDisplay() string {
-	if len(e.NewIPs) > 1 {
+	if len(e.NewIPs) > 0 {
 		return strings.Join(e.NewIPs, ", ")
 	}
 	return e.NewIP
