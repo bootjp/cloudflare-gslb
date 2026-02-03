@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -68,8 +69,8 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 				Fields: []discordField{
 					{Name: "Origin", Value: fmt.Sprintf("%s.%s (%s)", event.OriginName, event.ZoneName, event.RecordType), Inline: true},
 					{Name: "Event Type", Value: d.getEventType(event), Inline: true},
-					{Name: "Old IP", Value: event.OldIP, Inline: true},
-					{Name: "New IP", Value: event.NewIP, Inline: true},
+					{Name: "Old IPs", Value: formatDiscordIPList(event.OldIPs, event.OldIP), Inline: true},
+					{Name: "New IPs", Value: formatDiscordIPList(event.NewIPs, event.NewIP), Inline: true},
 				},
 				Footer: &discordFooter{
 					Text: "Cloudflare GSLB",
@@ -115,4 +116,14 @@ func (d *DiscordNotifier) getEventType(event FailoverEvent) string {
 	default:
 		return "⚠️ Failover"
 	}
+}
+
+func formatDiscordIPList(ips []string, fallback string) string {
+	if len(ips) == 0 {
+		if fallback == "" {
+			return "-"
+		}
+		return fallback
+	}
+	return strings.Join(ips, "\n")
 }

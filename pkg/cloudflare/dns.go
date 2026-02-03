@@ -23,7 +23,7 @@ type DNSClientInterface interface {
 	DeleteDNSRecord(ctx context.Context, recordID string) error
 	CreateDNSRecord(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
 	UpdateDNSRecord(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
-	ReplaceRecords(ctx context.Context, name, recordType, newContent string) error
+	ReplaceRecords(ctx context.Context, name, recordType string, newContents []string) error
 	GetZoneID() string
 }
 
@@ -146,25 +146,6 @@ func (c *DNSClient) UpdateDNSRecord(ctx context.Context, recordID, name, recordT
 	return *record, nil
 }
 
-func (c *DNSClient) findRecordsToReplace(records []dns.RecordResponse, newContent string) (bool, []dns.RecordResponse) {
-	var recordsToDelete []dns.RecordResponse
-	foundMatch := false
-
-	for i := range records {
-		if records[i].Content == newContent {
-			if !foundMatch {
-				foundMatch = true
-			} else {
-				recordsToDelete = append(recordsToDelete, records[i])
-			}
-		} else {
-			recordsToDelete = append(recordsToDelete, records[i])
-		}
-	}
-
-	return foundMatch, recordsToDelete
-}
-
 func (c *DNSClient) deleteRecords(ctx context.Context, recordsToDelete []dns.RecordResponse) error {
 	for _, record := range recordsToDelete {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
@@ -175,28 +156,98 @@ func (c *DNSClient) deleteRecords(ctx context.Context, recordsToDelete []dns.Rec
 	return nil
 }
 
-func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newContent string) error {
+func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType string, newContents []string) error {
+	if len(newContents) == 0 {
+		return errors.New("no record contents provided")
+	}
+
+	desired := dedupeContents(newContents)
+
 	records, err := c.GetDNSRecords(ctx, name, recordType)
 	if err != nil {
 		return err
 	}
 
-	// If no records exist, create one and return
 	if len(records) == 0 {
-		_, err = c.CreateDNSRecord(ctx, name, recordType, newContent)
+		return c.createRecords(ctx, name, recordType, desired)
+	}
+
+	desiredSet := buildContentSet(desired)
+	recordsByContent := groupRecordsByContent(records)
+	missing, recordsToDelete := diffRecords(desired, desiredSet, recordsByContent)
+
+	if err := c.createRecords(ctx, name, recordType, missing); err != nil {
 		return err
 	}
 
-	foundMatch, recordsToDelete := c.findRecordsToReplace(records, newContent)
-
-	// If no record has the desired content, create a new one first (atomic approach)
-	if !foundMatch {
-		_, err := c.CreateDNSRecord(ctx, name, recordType, newContent)
-		if err != nil {
-			return err
-		}
-		recordsToDelete = records
+	if len(recordsToDelete) == 0 {
+		return nil
 	}
 
 	return c.deleteRecords(ctx, recordsToDelete)
+}
+
+func (c *DNSClient) createRecords(ctx context.Context, name, recordType string, contents []string) error {
+	for _, content := range contents {
+		if _, err := c.CreateDNSRecord(ctx, name, recordType, content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func buildContentSet(contents []string) map[string]struct{} {
+	desiredSet := make(map[string]struct{}, len(contents))
+	for _, content := range contents {
+		desiredSet[content] = struct{}{}
+	}
+	return desiredSet
+}
+
+func groupRecordsByContent(records []dns.RecordResponse) map[string][]dns.RecordResponse {
+	recordsByContent := make(map[string][]dns.RecordResponse, len(records))
+	for _, record := range records {
+		recordsByContent[record.Content] = append(recordsByContent[record.Content], record)
+	}
+	return recordsByContent
+}
+
+func diffRecords(desired []string, desiredSet map[string]struct{}, recordsByContent map[string][]dns.RecordResponse) ([]string, []dns.RecordResponse) {
+	var recordsToDelete []dns.RecordResponse
+	var missing []string
+
+	for _, content := range desired {
+		existing := recordsByContent[content]
+		if len(existing) == 0 {
+			missing = append(missing, content)
+			continue
+		}
+		if len(existing) > 1 {
+			recordsToDelete = append(recordsToDelete, existing[1:]...)
+		}
+	}
+
+	for content, existing := range recordsByContent {
+		if _, ok := desiredSet[content]; !ok {
+			recordsToDelete = append(recordsToDelete, existing...)
+		}
+	}
+
+	return missing, recordsToDelete
+}
+
+func dedupeContents(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

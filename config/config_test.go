@@ -396,3 +396,92 @@ func TestNonExistentZoneInConfig(t *testing.T) {
 		t.Errorf("Expected 2 origins, got %d", len(config.Origins))
 	}
 }
+
+func TestLoadConfig_LegacyPriorityLevels(t *testing.T) {
+	testConfigContent := `{
+		"cloudflare_api_token": "test-token",
+		"cloudflare_zone_id": "test-zone",
+		"check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "example.com",
+				"record_type": "A",
+				"priority_failover_ips": ["192.168.1.1", "192.168.1.2"],
+				"failover_ips": ["192.168.1.3"]
+			}
+		]
+	}`
+
+	tmpfile, err := os.CreateTemp("", "legacy_priority_config_*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	cfg, err := LoadConfig(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if len(cfg.Origins) != 1 {
+		t.Fatalf("Expected 1 origin, got %d", len(cfg.Origins))
+	}
+
+	levels := cfg.Origins[0].PriorityLevels
+	if len(levels) != 2 {
+		t.Fatalf("Expected 2 priority levels, got %d", len(levels))
+	}
+
+	if levels[0].Priority != LegacyPriorityHigh {
+		t.Errorf("Expected high priority %d, got %d", LegacyPriorityHigh, levels[0].Priority)
+	}
+	if levels[1].Priority != LegacyPriorityLow {
+		t.Errorf("Expected low priority %d, got %d", LegacyPriorityLow, levels[1].Priority)
+	}
+	if len(levels[0].IPs) != 2 || levels[0].IPs[0] != "192.168.1.1" {
+		t.Errorf("Unexpected high priority IPs: %v", levels[0].IPs)
+	}
+	if len(levels[1].IPs) != 1 || levels[1].IPs[0] != "192.168.1.3" {
+		t.Errorf("Unexpected low priority IPs: %v", levels[1].IPs)
+	}
+}
+
+func TestLoadConfig_InvalidRecordType(t *testing.T) {
+	testConfigContent := `{
+		"cloudflare_api_token": "test-token",
+		"cloudflare_zone_id": "test-zone",
+		"check_interval_seconds": 60,
+		"origins": [
+			{
+				"name": "example.com",
+				"record_type": "CNAME",
+				"priority_failover_ips": ["192.168.1.1"]
+			}
+		]
+	}`
+
+	tmpfile, err := os.CreateTemp("", "invalid_record_type_*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfigContent)); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	_, err = LoadConfig(tmpfile.Name())
+	if err == nil {
+		t.Fatalf("LoadConfig() expected error for invalid record type, got nil")
+	}
+}

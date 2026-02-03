@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 )
 
 var (
-	ErrNoFailoverIPs          = errors.New("no failover IPs configured")
 	ErrInvalidIPAddress       = errors.New("invalid IP address")
 	ErrInvalidIPv4Address     = errors.New("not a valid IPv4 address for A record")
 	ErrInvalidIPv6Address     = errors.New("not a valid IPv6 address for AAAA record")
@@ -26,9 +26,9 @@ var (
 )
 
 type OriginStatus struct {
-	CurrentIP       string
-	UsingPriority   bool
-	HealthyPriority bool
+	CurrentPriority int
+	CurrentIPs      []string
+	Initialized     bool
 	LastCheck       time.Time
 }
 
@@ -38,9 +38,6 @@ type Service struct {
 	checkMutex sync.Mutex
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
-
-	failoverMutex   sync.RWMutex
-	failoverIndices map[string]int
 
 	dnsClientsMutex sync.RWMutex
 	dnsClients      map[string]cloudflare.DNSClientInterface
@@ -134,15 +131,14 @@ func NewService(cfg *config.Config) (*Service, error) {
 	notifiers := buildNotifiers(cfg)
 
 	return &Service{
-		config:          cfg,
-		dnsClient:       defaultClient,
-		stopCh:          make(chan struct{}),
-		failoverIndices: make(map[string]int),
-		dnsClients:      dnsClients,
-		originStatus:    make(map[string]*OriginStatus),
-		zoneMap:         zoneMap,
-		zoneIDMap:       zoneIDMap,
-		notifiers:       notifiers,
+		config:       cfg,
+		dnsClient:    defaultClient,
+		stopCh:       make(chan struct{}),
+		dnsClients:   dnsClients,
+		originStatus: make(map[string]*OriginStatus),
+		zoneMap:      zoneMap,
+		zoneIDMap:    zoneIDMap,
+		notifiers:    notifiers,
 	}, nil
 }
 
@@ -195,14 +191,7 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 
 	s.originStatusMutex.Lock()
 	if _, exists := s.originStatus[originKey]; !exists {
-		initialUsingPriority := len(origin.PriorityFailoverIPs) > 0
-		log.Printf("Initializing state for %s: initialUsingPriority=%t (will be verified on first check)",
-			origin.Name, initialUsingPriority)
-
-		s.originStatus[originKey] = &OriginStatus{
-			UsingPriority:   initialUsingPriority,
-			HealthyPriority: true,
-		}
+		s.originStatus[originKey] = &OriginStatus{}
 	}
 	s.originStatusMutex.Unlock()
 
@@ -215,86 +204,7 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 		case <-ticker.C:
 			log.Printf("Running check cycle for origin: %s (%s)", origin.Name, origin.RecordType)
 			s.checkOrigin(ctx, origin, checker)
-			if origin.ReturnToPriority && len(origin.PriorityFailoverIPs) > 0 {
-				log.Printf("ReturnToPriority is enabled, checking priority IPs for %s", origin.Name)
-				s.checkPriorityIPs(ctx, origin, checker)
-			} else {
-				log.Printf("ReturnToPriority is disabled or no priority IPs for %s", origin.Name)
-			}
 		}
-	}
-}
-
-func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
-	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
-
-	s.originStatusMutex.RLock()
-	status := s.originStatus[originKey]
-	s.originStatusMutex.RUnlock()
-
-	log.Printf("Checking priority IPs for %s, current status: UsingPriority=%t, HealthyPriority=%t, CurrentIP=%s",
-		origin.Name, status.UsingPriority, status.HealthyPriority, status.CurrentIP)
-
-	isPriorityIP := false
-	for _, priorityIP := range origin.PriorityFailoverIPs {
-		if status.CurrentIP == priorityIP {
-			isPriorityIP = true
-			break
-		}
-	}
-
-	if isPriorityIP != status.UsingPriority {
-		log.Printf("Fixing inconsistent state for %s: UsingPriority=%t but current IP %s is %s a priority IP",
-			origin.Name, status.UsingPriority, status.CurrentIP,
-			map[bool]string{true: "actually", false: "not"}[isPriorityIP])
-
-		s.originStatusMutex.Lock()
-		status.UsingPriority = isPriorityIP
-		s.originStatusMutex.Unlock()
-	}
-
-	if status.UsingPriority {
-		log.Printf("Already using priority IP for %s, skipping check", origin.Name)
-		return
-	}
-
-	allHealthy := true
-	for _, ip := range origin.PriorityFailoverIPs {
-		if err := checker.Check(ip); err != nil {
-			log.Printf("Priority IP %s is still unhealthy: %v", ip, err)
-			allHealthy = false
-			break
-		}
-		log.Printf("Priority IP %s is healthy", ip)
-	}
-
-	if allHealthy {
-		log.Printf("Priority IPs for %s are now healthy, switching back", origin.Name)
-
-		s.originStatusMutex.Lock()
-		status.HealthyPriority = true
-		oldIP := status.CurrentIP
-		s.originStatusMutex.Unlock()
-
-		// 優先IPに戻すためのDNSレコード更新
-		dnsClient := s.getDNSClientForOrigin(origin)
-		priorityIP := origin.PriorityFailoverIPs[0]
-
-		if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, priorityIP); err != nil {
-			log.Printf("Failed to switch back to priority IP for %s: %v", origin.Name, err)
-			return
-		}
-
-		// 状態を更新
-		s.originStatusMutex.Lock()
-		status.CurrentIP = priorityIP
-		status.UsingPriority = true
-		s.originStatusMutex.Unlock()
-
-		log.Printf("Successfully switched back to priority IP %s for %s", priorityIP, origin.Name)
-
-		// 通知を送信
-		s.sendNotifications(ctx, origin, oldIP, priorityIP, "Priority IP is healthy again", true, false)
 	}
 }
 
@@ -304,6 +214,14 @@ func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, c
 
 	log.Printf("Checking origin: %s (%s)", origin.Name, origin.RecordType)
 
+	priorityLevels := origin.EffectivePriorityLevels()
+	if len(priorityLevels) == 0 {
+		log.Printf("No priority levels configured for %s", origin.Name)
+		return
+	}
+	priorityLevels = sortPriorityLevels(priorityLevels)
+	maxPriority := priorityLevels[0].Priority
+
 	dnsClient := s.getDNSClientForOrigin(origin)
 
 	records, err := dnsClient.GetDNSRecords(ctx, origin.Name, origin.RecordType)
@@ -312,17 +230,55 @@ func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, c
 		return
 	}
 
-	if len(records) == 0 {
-		log.Printf("No DNS records found for %s", origin.Name)
-		return
-	}
-
 	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
 	status := s.getOrInitOriginStatus(originKey)
 
-	for _, record := range records {
-		s.processRecord(ctx, origin, record, checker, status)
+	currentIPs := collectRecordIPs(records)
+
+	currentPriority := status.CurrentPriority
+	currentPrioritySet := status.Initialized
+
+	if detectedPriority, ok := detectCurrentPriority(priorityLevels, currentIPs); ok {
+		currentPriority = detectedPriority
+		currentPrioritySet = true
 	}
+
+	if !currentPrioritySet {
+		currentPriority = maxPriority
+		currentPrioritySet = true
+	}
+
+	selectedPriority, selectedIPs, ok := s.selectPriorityLevel(origin, checker, priorityLevels, currentPriority, currentPrioritySet)
+	if !ok {
+		log.Printf("No healthy IPs available for %s", origin.Name)
+		s.updateOriginStatus(originKey, currentPriority, currentIPs, currentPrioritySet)
+		return
+	}
+
+	selectedIPs = s.filterValidIPs(origin.RecordType, selectedIPs)
+	if len(selectedIPs) == 0 {
+		log.Printf("No valid IPs available for %s (%s)", origin.Name, origin.RecordType)
+		s.updateOriginStatus(originKey, currentPriority, currentIPs, currentPrioritySet)
+		return
+	}
+
+	if sameIPSet(currentIPs, selectedIPs) {
+		s.updateOriginStatus(originKey, selectedPriority, selectedIPs, true)
+		return
+	}
+
+	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, selectedIPs); err != nil {
+		log.Printf("Failed to update DNS records for %s: %v", origin.Name, err)
+		return
+	}
+
+	s.updateOriginStatus(originKey, selectedPriority, selectedIPs, true)
+
+	isPriorityIP := selectedPriority == maxPriority
+	isFailoverIP := selectedPriority < maxPriority
+	reason := buildChangeReason(currentPrioritySet, currentPriority, selectedPriority, currentIPs, selectedIPs)
+
+	s.sendNotifications(origin, currentIPs, selectedIPs, reason, isPriorityIP, isFailoverIP, currentPriority, selectedPriority, maxPriority)
 }
 
 func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
@@ -331,10 +287,7 @@ func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
 	s.originStatusMutex.RUnlock()
 
 	if !exists {
-		status = &OriginStatus{
-			UsingPriority:   false,
-			HealthyPriority: true,
-		}
+		status = &OriginStatus{}
 		s.originStatusMutex.Lock()
 		s.originStatus[originKey] = status
 		s.originStatusMutex.Unlock()
@@ -342,131 +295,193 @@ func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
 	return status
 }
 
-func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig, record dns.RecordResponse, checker healthcheck.Checker, status *OriginStatus) {
-	ip := record.Content
-
-	// OriginStatusの更新にはロックが必要
-	s.originStatusMutex.Lock()
-	status.CurrentIP = ip
-	s.originStatusMutex.Unlock()
-
-	err := checker.Check(ip)
-	if err != nil {
-		log.Printf("Health check failed for %s (%s): %v", origin.Name, ip, err)
-
-		s.originStatusMutex.Lock()
-		if status.UsingPriority && len(origin.PriorityFailoverIPs) > 0 {
-			status.HealthyPriority = false
-			status.UsingPriority = false
-		}
-		s.originStatusMutex.Unlock()
-
-		if err := s.replaceUnhealthyRecord(ctx, origin, record); err != nil {
-			log.Printf("Failed to replace unhealthy record for %s: %v", origin.Name, err)
-		}
-	} else {
-		log.Printf("Health check passed for %s (%s)", origin.Name, ip)
-
-		isPriorityIP := false
-		for _, priorityIP := range origin.PriorityFailoverIPs {
-			if ip == priorityIP {
-				isPriorityIP = true
-				break
+func (s *Service) selectPriorityLevel(origin config.OriginConfig, checker healthcheck.Checker, levels []config.PriorityLevel, currentPriority int, currentPrioritySet bool) (int, []string, bool) {
+	if !origin.ReturnToPriority && currentPrioritySet {
+		if level, ok := findPriorityLevel(levels, currentPriority); ok {
+			if s.checkPriorityLevel(origin.RecordType, checker, level) {
+				return currentPriority, level.IPs, true
 			}
 		}
-
-		s.originStatusMutex.Lock()
-		status.UsingPriority = isPriorityIP
-		status.CurrentIP = ip
-		status.LastCheck = time.Now()
-		s.originStatusMutex.Unlock()
-	}
-}
-
-func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse) error {
-	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
-
-	dnsClient := s.getDNSClientForOrigin(origin)
-
-	s.originStatusMutex.RLock()
-	status := s.originStatus[originKey]
-	s.originStatusMutex.RUnlock()
-
-	if status.UsingPriority && !status.HealthyPriority && len(origin.FailoverIPs) > 0 {
-		return s.switchToPrimaryFailover(ctx, origin, dnsClient, originKey, status)
 	}
 
-	if len(origin.FailoverIPs) > 0 {
-		if err := s.validateIPType(origin.RecordType, unhealthyRecord.Content); err != nil {
-			return err
+	for _, level := range levels {
+		if !origin.ReturnToPriority && currentPrioritySet && level.Priority > currentPriority {
+			continue
 		}
 
-		return s.useNextFailoverIP(ctx, origin, unhealthyRecord, dnsClient, originKey)
+		if s.checkPriorityLevel(origin.RecordType, checker, level) {
+			return level.Priority, level.IPs, true
+		}
 	}
 
-	return errors.WithStack(ErrNoFailoverIPs)
+	return 0, nil, false
 }
 
-func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.OriginConfig, dnsClient cloudflare.DNSClientInterface, originKey string, status *OriginStatus) error {
+func (s *Service) checkPriorityLevel(recordType string, checker healthcheck.Checker, level config.PriorityLevel) bool {
+	log.Printf("Checking priority level %d (%d IPs)", level.Priority, len(level.IPs))
+
+	if len(level.IPs) == 0 {
+		return false
+	}
+
+	for _, ip := range level.IPs {
+		if err := s.validateIPType(recordType, ip); err != nil {
+			log.Printf("Invalid IP %s for record type %s: %v", ip, recordType, err)
+			return false
+		}
+		if err := checker.Check(ip); err != nil {
+			log.Printf("IP %s at priority %d is unhealthy: %v", ip, level.Priority, err)
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Service) filterValidIPs(recordType string, ips []string) []string {
+	valid := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if err := s.validateIPType(recordType, ip); err != nil {
+			log.Printf("Invalid IP %s for record type %s: %v", ip, recordType, err)
+			continue
+		}
+		valid = append(valid, ip)
+	}
+	return valid
+}
+
+func (s *Service) updateOriginStatus(originKey string, priority int, ips []string, initialized bool) {
 	s.originStatusMutex.Lock()
-	oldIP := status.CurrentIP
-	status.UsingPriority = false
-	s.originStatusMutex.Unlock()
+	defer s.originStatusMutex.Unlock()
 
-	newIP := origin.FailoverIPs[0]
-
-	if err := s.validateIPType(origin.RecordType, newIP); err != nil {
-		return err
+	status := s.originStatus[originKey]
+	if status == nil {
+		status = &OriginStatus{}
+		s.originStatus[originKey] = status
 	}
 
-	s.failoverMutex.Lock()
-	s.failoverIndices[originKey] = 0
-	s.failoverMutex.Unlock()
-
-	log.Printf("Switching from priority IP to regular failover IP: %s for %s",
-		newIP, origin.Name)
-
-	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
-		return err
+	if initialized {
+		status.CurrentPriority = priority
+		status.Initialized = true
 	}
-
-	// 通知を送信
-	s.sendNotifications(ctx, origin, oldIP, newIP, "Priority IP failed, switching to backup IP", false, true)
-	return nil
+	status.CurrentIPs = ips
+	status.LastCheck = time.Now()
 }
 
-func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse, dnsClient cloudflare.DNSClientInterface, originKey string) error {
-	s.failoverMutex.RLock()
-	currentIndex, exists := s.failoverIndices[originKey]
-	s.failoverMutex.RUnlock()
+func sortPriorityLevels(levels []config.PriorityLevel) []config.PriorityLevel {
+	sorted := make([]config.PriorityLevel, len(levels))
+	copy(sorted, levels)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Priority > sorted[j].Priority
+	})
+	return sorted
+}
 
-	if !exists {
-		currentIndex = 0
+func findPriorityLevel(levels []config.PriorityLevel, priority int) (config.PriorityLevel, bool) {
+	for _, level := range levels {
+		if level.Priority == priority {
+			return level, true
+		}
+	}
+	return config.PriorityLevel{}, false
+}
+
+func detectCurrentPriority(levels []config.PriorityLevel, currentIPs []string) (int, bool) {
+	if len(levels) == 0 || len(currentIPs) == 0 {
+		return 0, false
 	}
 
-	nextIndex := (currentIndex + 1) % len(origin.FailoverIPs)
-
-	s.failoverMutex.Lock()
-	s.failoverIndices[originKey] = nextIndex
-	s.failoverMutex.Unlock()
-
-	newIP := origin.FailoverIPs[nextIndex]
-
-	if err := s.validateIPType(origin.RecordType, newIP); err != nil {
-		return err
+	currentSet := sliceToSet(currentIPs)
+	matchedPriority := findHighestMatchingPriority(levels, currentSet)
+	if matchedPriority == nil {
+		return 0, false
 	}
+	return *matchedPriority, true
+}
 
-	oldIP := unhealthyRecord.Content
-	log.Printf("Replacing unhealthy record %s with failover IP: %s (index: %d, proxied: %t)",
-		oldIP, newIP, nextIndex, origin.Proxied)
-
-	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
-		return err
+func findHighestMatchingPriority(levels []config.PriorityLevel, currentSet map[string]struct{}) *int {
+	var matched *int
+	for _, level := range levels {
+		if !isSubset(currentSet, sliceToSet(level.IPs)) {
+			continue
+		}
+		matched = pickHigherPriority(matched, level.Priority)
 	}
+	return matched
+}
 
-	// 通知を送信
-	s.sendNotifications(ctx, origin, oldIP, newIP, "Health check failed, switching to backup IP", false, true)
-	return nil
+func sliceToSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func isSubset(subset map[string]struct{}, superset map[string]struct{}) bool {
+	for value := range subset {
+		if _, ok := superset[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func pickHigherPriority(current *int, candidate int) *int {
+	if current == nil || candidate > *current {
+		next := candidate
+		return &next
+	}
+	return current
+}
+
+func collectRecordIPs(records []dns.RecordResponse) []string {
+	ips := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Content != "" {
+			ips = append(ips, record.Content)
+		}
+	}
+	return ips
+}
+
+func sameIPSet(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	setA := make(map[string]struct{}, len(a))
+	for _, ip := range a {
+		setA[ip] = struct{}{}
+	}
+	setB := make(map[string]struct{}, len(b))
+	for _, ip := range b {
+		setB[ip] = struct{}{}
+	}
+	if len(setA) != len(setB) {
+		return false
+	}
+	for ip := range setA {
+		if _, ok := setB[ip]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func buildChangeReason(currentPrioritySet bool, currentPriority, selectedPriority int, currentIPs, selectedIPs []string) string {
+	if !currentPrioritySet {
+		return fmt.Sprintf("Switching to priority level %d", selectedPriority)
+	}
+	if selectedPriority > currentPriority {
+		return fmt.Sprintf("Priority level %d is healthy again", selectedPriority)
+	}
+	if selectedPriority < currentPriority {
+		return fmt.Sprintf("Priority level %d unhealthy, switching to level %d", currentPriority, selectedPriority)
+	}
+	if !sameIPSet(currentIPs, selectedIPs) {
+		return fmt.Sprintf("Updating IPs within priority level %d based on health checks", selectedPriority)
+	}
+	return "No change"
 }
 
 func (s *Service) validateIPType(recordType, ipAddress string) error {
@@ -488,7 +503,7 @@ func (s *Service) validateIPType(recordType, ipAddress string) error {
 	return nil
 }
 
-func (s *Service) sendNotifications(ctx context.Context, origin config.OriginConfig, oldIP, newIP, reason string, isPriorityIP, isFailoverIP bool) {
+func (s *Service) sendNotifications(origin config.OriginConfig, oldIPs, newIPs []string, reason string, isPriorityIP, isFailoverIP bool, oldPriority, newPriority, maxPriority int) {
 	if len(s.notifiers) == 0 {
 		return
 	}
@@ -497,13 +512,18 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 		OriginName:       origin.Name,
 		ZoneName:         origin.ZoneName,
 		RecordType:       origin.RecordType,
-		OldIP:            oldIP,
-		NewIP:            newIP,
+		OldIP:            firstIP(oldIPs),
+		NewIP:            firstIP(newIPs),
+		OldIPs:           oldIPs,
+		NewIPs:           newIPs,
 		Reason:           reason,
 		Timestamp:        time.Now(),
 		IsPriorityIP:     isPriorityIP,
 		IsFailoverIP:     isFailoverIP,
 		ReturnToPriority: origin.ReturnToPriority,
+		OldPriority:      oldPriority,
+		NewPriority:      newPriority,
+		MaxPriority:      maxPriority,
 	}
 
 	// Create a context with timeout for notifications independent of parent cancellation
@@ -518,8 +538,8 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 			if err := notifier.Notify(notifyCtx, event); err != nil {
 				log.Printf("Failed to send notification: %v", err)
 			} else {
-				log.Printf("Notification sent successfully for %s.%s (%s -> %s)",
-					origin.Name, origin.ZoneName, oldIP, newIP)
+				log.Printf("Notification sent successfully for %s.%s (%v -> %v)",
+					origin.Name, origin.ZoneName, oldIPs, newIPs)
 			}
 		}(n)
 	}
@@ -532,37 +552,19 @@ func (s *Service) sendNotifications(ctx context.Context, origin config.OriginCon
 	}()
 }
 
+func firstIP(ips []string) string {
+	if len(ips) == 0 {
+		return ""
+	}
+	return ips[0]
+}
+
 func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig) error {
 	checker, err := healthcheck.NewChecker(origin.HealthCheck)
 	if err != nil {
 		return fmt.Errorf("failed to create health checker for %s: %w", origin.Name, err)
 	}
-
-	log.Printf("Checking origin: %s (%s)", origin.Name, origin.RecordType)
-
-	originKey := fmt.Sprintf("%s-%s-%s", origin.ZoneName, origin.Name, origin.RecordType)
-	status := s.getOrInitOriginStatus(originKey)
-
-	dnsClient := s.getDNSClientForOrigin(origin)
-	records, err := dnsClient.GetDNSRecords(ctx, origin.Name, origin.RecordType)
-	if err != nil {
-		return fmt.Errorf("failed to get DNS records for %s: %w", origin.Name, err)
-	}
-
-	if len(records) == 0 {
-		log.Printf("No DNS records found for %s (%s)", origin.Name, origin.RecordType)
-		return nil
-	}
-
-	for _, record := range records {
-		s.processRecord(ctx, origin, record, checker, status)
-	}
-
-	if origin.ReturnToPriority && len(origin.PriorityFailoverIPs) > 0 {
-		log.Printf("ReturnToPriority is enabled, checking priority IPs for %s", origin.Name)
-		s.checkPriorityIPs(ctx, origin, checker)
-	}
-
+	s.checkOrigin(ctx, origin, checker)
 	return nil
 }
 

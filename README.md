@@ -10,10 +10,12 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - ICMP health checks
 - Automatic DNS record replacement upon anomaly detection
 - Configurable check intervals
-- Custom failover IP address list configuration
+- Priority-based failover with explicit priority levels (higher value = higher priority)
+- DNS round-robin across multiple IPs at the same priority level
 - Cloudflare proxy settings for each origin
 - One-shot mode for batch health checks via CLI or Docker container
 - **Multiple zone support** - Monitor and manage DNS records across multiple Cloudflare zones
+- **Configuration migration tool** - Convert legacy configs to the new priority-based format
 - **Failover notifications** - Send notifications to Slack and Discord webhooks when failover events occur
 
 ## Installation
@@ -69,13 +71,21 @@ Example configuration file:
         "host": "www.example.com",
         "timeout": 5
       },
-      "priority_failover_ips": [
-        "192.168.1.1"
-      ],
-      "failover_ips": [
-        "192.168.1.2",
-        "192.168.1.3",
-        "192.168.1.4"
+      "priority_levels": [
+        {
+          "priority": 100,
+          "ips": [
+            "192.168.1.1",
+            "192.168.1.2"
+          ]
+        },
+        {
+          "priority": 50,
+          "ips": [
+            "192.168.1.3",
+            "192.168.1.4"
+          ]
+        }
       ],
       "proxied": true,
       "return_to_priority": true
@@ -90,12 +100,20 @@ Example configuration file:
         "host": "api.example.com",
         "timeout": 5
       },
-      "priority_failover_ips": [
-        "10.0.0.1"
-      ],
-      "failover_ips": [
-        "10.0.0.2",
-        "10.0.0.3"
+      "priority_levels": [
+        {
+          "priority": 100,
+          "ips": [
+            "10.0.0.1"
+          ]
+        },
+        {
+          "priority": 50,
+          "ips": [
+            "10.0.0.2",
+            "10.0.0.3"
+          ]
+        }
       ],
       "proxied": true,
       "return_to_priority": true
@@ -108,13 +126,21 @@ Example configuration file:
         "type": "icmp",
         "timeout": 5
       },
-      "priority_failover_ips": [
-        "2001:db8::1"
-      ],
-      "failover_ips": [
-        "2001:db8::2",
-        "2001:db8::3",
-        "2001:db8::4"
+      "priority_levels": [
+        {
+          "priority": 100,
+          "ips": [
+            "2001:db8::1"
+          ]
+        },
+        {
+          "priority": 50,
+          "ips": [
+            "2001:db8::2",
+            "2001:db8::3",
+            "2001:db8::4"
+          ]
+        }
       ],
       "proxied": false,
       "return_to_priority": true
@@ -136,7 +162,7 @@ Example configuration file:
 - `origins`: Array of origin configurations
   - `name`: DNS record name (without the zone part)
   - `zone_name`: The name of the zone this record belongs to (must match one of the names in `cloudflare_zones`)
-  - `record_type`: DNS record type (`A` or `AAAA`)
+  - `record_type`: DNS record type (`A` or `AAAA`). `CNAME` などはサポートしません
   - `health_check`: Health check configuration
     - `type`: Health check type (`http`, `https`, or `icmp`)
     - `endpoint`: HTTP/HTTPS endpoint path
@@ -144,8 +170,9 @@ Example configuration file:
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
-  - `priority_failover_ips`: Primary IP addresses to use when healthy
-  - `failover_ips`: Backup IP addresses to use when priority IPs are unhealthy
+  - `priority_levels`: Priority-based IP groups (higher `priority` values are preferred)
+    - `priority`: Priority value (higher = higher priority)
+    - `ips`: List of IPs for DNS round-robin at that priority level
   - `proxied`: Whether to enable Cloudflare proxy for this record
   - `return_to_priority`: Whether to return to priority IPs when they become healthy again
 
@@ -166,22 +193,37 @@ For backward compatibility, you can still use the old configuration format with 
 
 When using the old format, all origins will be associated with the single zone specified by `cloudflare_zone_id`.
 
-### Failover IP List Behavior
+Legacy `priority_failover_ips` and `failover_ips` fields are still supported, but they are deprecated in favor of `priority_levels`.
 
-When a failover IP list is configured, it operates as follows:
+### Migration Guide
 
-1. When a health check fails, it switches to the next IP address in the list
-2. If it reaches the end of the list, it loops back to the first IP
-3. IP rotation is managed independently for each origin
-4. It checks whether the IP type is appropriate for the record type (A or AAAA)
+Use the migration tool to convert legacy configurations (single zone or legacy failover IP fields) into the new `priority_levels` structure:
 
-### Utilizing Priority IPs and Failover IPs
+```bash
+go build -o gslb-migrate ./cmd/migrate
+./gslb-migrate -config config.json -out config.migrated.json
+```
 
-By combining priority IPs and failover IPs, you can optimize resource efficiency as follows:
+The generated file will include explicit `priority_levels` with default priorities:
+- `priority_failover_ips` → priority `100`
+- `failover_ips` → priority `0`
 
-1. During normal operation, traffic is directed to priority IPs (e.g., dedicated servers with fixed pricing)
-2. During outages, traffic is directed to failover IPs (e.g., cloud VMs with pay-as-you-go pricing)
-3. When the priority IP recovers, traffic automatically returns to it (if `return_to_priority: true`)
+### Priority Levels Behavior
+
+When `priority_levels` are configured, the system behaves as follows:
+
+1. It selects the highest priority level that has at least one healthy IP
+2. All IPs at the selected priority level are published for DNS round-robin
+3. If any IP in a priority level is unhealthy, the system falls back to the next lower priority level
+4. If `return_to_priority: true`, it will move back to higher priorities once they recover
+
+### Utilizing Priority Levels
+
+By combining multiple priority levels, you can optimize resource efficiency as follows:
+
+1. During normal operation, traffic is directed to the highest priority IPs (e.g., dedicated servers with fixed pricing)
+2. During outages, traffic is directed to lower priority IPs (e.g., cloud VMs with pay-as-you-go pricing)
+3. When higher priority IPs recover, traffic automatically returns to them (if `return_to_priority: true`)
 
 This approach offers the following benefits:
 - Cost optimization during normal operation (prioritizing fixed-cost resources)
@@ -279,8 +321,8 @@ Notifications are sent for the following events:
 Each notification includes:
 - Origin name and zone
 - Record type (A or AAAA)
-- Old IP address
-- New IP address
+- Old IP address(es)
+- New IP address(es)
 - Event type
 - Reason for the failover
 - Timestamp
