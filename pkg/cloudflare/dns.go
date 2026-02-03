@@ -242,7 +242,12 @@ func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType
 
 	// Create a map of desired contents for quick lookup
 	desiredContents := make(map[string]bool)
+	seenContents := make(map[string]struct{})
 	for _, content := range newContents {
+		if _, exists := seenContents[content]; exists {
+			return fmt.Errorf("ReplaceRecordsMultiple: duplicate content %q for %s (%s); newContents must contain unique values", content, name, recordType)
+		}
+		seenContents[content] = struct{}{}
 		desiredContents[content] = true
 	}
 
