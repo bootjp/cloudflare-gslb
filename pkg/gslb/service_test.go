@@ -478,6 +478,7 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 			// originStatusを初期化
 			service.originStatus[originKey] = &OriginStatus{
 				CurrentIP:       tt.currentIP,
+				CurrentIPs:      []string{tt.currentIP},
 				UsingPriority:   tt.usingPriority,
 				HealthyPriority: tt.healthyPriority,
 				LastCheck:       time.Now(),
@@ -489,6 +490,7 @@ func TestReturnToPriorityTrigger(t *testing.T) {
 				replaceCallCount++
 				if len(newContents) > 0 {
 					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].CurrentIPs = newContents
 					service.originStatus[originKey].UsingPriority = true
 				}
 				return nil
@@ -611,6 +613,7 @@ func TestPriorityBasedSelection(t *testing.T) {
 			// originStatusを初期化（フェイルオーバーIPを使用中）
 			service.originStatus[originKey] = &OriginStatus{
 				CurrentIP:       tt.currentIP,
+				CurrentIPs:      []string{tt.currentIP},
 				UsingPriority:   false,
 				HealthyPriority: false,
 				LastCheck:       time.Now(),
@@ -634,6 +637,7 @@ func TestPriorityBasedSelection(t *testing.T) {
 				actualNewIPs = newContents
 				if len(newContents) > 0 {
 					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].CurrentIPs = newContents
 					service.originStatus[originKey].UsingPriority = true
 				}
 				return nil
@@ -775,6 +779,7 @@ func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
 			// originStatusを初期化（フェイルオーバーIPを使用中）
 			service.originStatus[originKey] = &OriginStatus{
 				CurrentIP:       tt.currentIP,
+				CurrentIPs:      []string{tt.currentIP},
 				UsingPriority:   false,
 				HealthyPriority: false,
 				LastCheck:       time.Now(),
@@ -798,6 +803,7 @@ func TestMultiplePriorityIPsWithSamePriority(t *testing.T) {
 				actualNewIPs = newContents
 				if len(newContents) > 0 {
 					service.originStatus[originKey].CurrentIP = newContents[0]
+					service.originStatus[originKey].CurrentIPs = newContents
 					service.originStatus[originKey].UsingPriority = true
 				}
 				return nil
