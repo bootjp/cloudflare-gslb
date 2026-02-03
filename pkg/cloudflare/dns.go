@@ -182,8 +182,11 @@ func (c *DNSClient) deleteRecords(ctx context.Context, recordsToDelete []dns.Rec
 	for _, record := range recordsToDelete {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete record %s: %w", record.ID, err))
+			// Don't sleep after failed deletions to avoid unnecessary delays
+		} else {
+			// Only sleep after successful deletions to respect rate limits
+			time.Sleep(500 * time.Millisecond)
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 	if len(deleteErrors) > 0 {
 		return errors.Wrapf(ErrDeleteRecordsFailed, "failed to delete %d record(s): %v", len(deleteErrors), deleteErrors)
