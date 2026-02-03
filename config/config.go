@@ -109,6 +109,18 @@ func (o *OriginConfig) IsSingleRecordType() bool {
 	return SingleRecordTypes[o.RecordType]
 }
 
+// ValidateDuplicateIPs は重複したIPが設定されていないかチェックする
+func (o *OriginConfig) ValidateDuplicateIPs() error {
+	seen := make(map[string]int)
+	for i, p := range o.PriorityFailoverIPs {
+		if prevIdx, exists := seen[p.IP]; exists {
+			return fmt.Errorf("duplicate IP %s found at indices %d and %d in priority_failover_ips", p.IP, prevIdx, i)
+		}
+		seen[p.IP] = i
+	}
+	return nil
+}
+
 // ValidateMultipleRecords は同一優先度で複数のIPが設定されている場合にレコードタイプをチェックする
 func (o *OriginConfig) ValidateMultipleRecords() error {
 	if !o.IsSingleRecordType() {
@@ -240,6 +252,11 @@ func LoadConfig(path string) (*Config, error) {
 
 		// 複数レコードの検証（RFC準拠チェック）
 		if err := origins[i].ValidateMultipleRecords(); err != nil {
+			return nil, fmt.Errorf("origin %s: %w", rawOrigin.Name, err)
+		}
+
+		// 重複IPの検証
+		if err := origins[i].ValidateDuplicateIPs(); err != nil {
 			return nil, fmt.Errorf("origin %s: %w", rawOrigin.Name, err)
 		}
 	}

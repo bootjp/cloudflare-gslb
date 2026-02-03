@@ -247,25 +247,31 @@ func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType
 	}
 
 	// Find records to keep, records to delete, and contents to create
-	contentsToCreate := make(map[string]bool)
-	for _, content := range newContents {
-		contentsToCreate[content] = true
-	}
-
+	// 既存レコードに存在するコンテンツを追跡
+	existingContents := make(map[string]bool)
 	var recordsToDelete []dns.RecordResponse
 	for _, record := range records {
 		if desiredContents[record.Content] {
-			// This record has desired content, keep it and remove from create list
-			delete(contentsToCreate, record.Content)
+			// This record has desired content, keep it
+			existingContents[record.Content] = true
 		} else {
 			// This record doesn't have desired content, delete it
 			recordsToDelete = append(recordsToDelete, record)
 		}
 	}
 
-	// Create new records for contents that don't exist
+	// newContentsの順序を保持してコンテンツを作成するためスライスを使用
+	// これにより、デバッグとテストが容易になる（決定論的な作成順序）
+	var contentsToCreate []string
+	for _, content := range newContents {
+		if !existingContents[content] {
+			contentsToCreate = append(contentsToCreate, content)
+		}
+	}
+
+	// Create new records for contents that don't exist (deterministic order)
 	var createdRecords []dns.RecordResponse
-	for content := range contentsToCreate {
+	for _, content := range contentsToCreate {
 		record, err := c.CreateDNSRecord(ctx, name, recordType, content)
 		if err != nil {
 			// Best-effort rollback: delete any records that were successfully created

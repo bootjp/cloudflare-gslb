@@ -800,3 +800,49 @@ func TestIsSingleRecordType(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateDuplicateIPs tests the ValidateDuplicateIPs method
+func TestValidateDuplicateIPs(t *testing.T) {
+	// 重複なし - 成功すべき
+	noDuplicates := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 2},
+			{IP: "192.168.1.2", Priority: 1},
+			{IP: "192.168.1.3", Priority: 0},
+		},
+	}
+	if err := noDuplicates.ValidateDuplicateIPs(); err != nil {
+		t.Errorf("Expected no error for unique IPs, got: %v", err)
+	}
+
+	// 重複あり（同じ優先度）- エラーになるべき
+	duplicateSamePriority := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 2},
+			{IP: "192.168.1.1", Priority: 2},
+		},
+	}
+	if err := duplicateSamePriority.ValidateDuplicateIPs(); err == nil {
+		t.Error("Expected error for duplicate IPs with same priority")
+	}
+
+	// 重複あり（異なる優先度）- エラーになるべき
+	duplicateDiffPriority := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{
+			{IP: "192.168.1.1", Priority: 2},
+			{IP: "192.168.1.2", Priority: 1},
+			{IP: "192.168.1.1", Priority: 0},
+		},
+	}
+	if err := duplicateDiffPriority.ValidateDuplicateIPs(); err == nil {
+		t.Error("Expected error for duplicate IPs with different priorities")
+	}
+
+	// 空のリスト - 成功すべき
+	emptyList := OriginConfig{
+		PriorityFailoverIPs: []PriorityIP{},
+	}
+	if err := emptyList.ValidateDuplicateIPs(); err != nil {
+		t.Errorf("Expected no error for empty list, got: %v", err)
+	}
+}
