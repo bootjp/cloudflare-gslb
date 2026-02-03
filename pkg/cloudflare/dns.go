@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -167,12 +168,19 @@ func (c *DNSClient) findRecordsToReplace(records []dns.RecordResponse, newConten
 	return foundMatch, recordsToDelete
 }
 
+// deleteRecords deletes all specified records. It continues deleting even if some deletions fail,
+// collecting all errors and returning an aggregate error at the end. This ensures maximum cleanup
+// even in the presence of partial failures.
 func (c *DNSClient) deleteRecords(ctx context.Context, recordsToDelete []dns.RecordResponse) error {
+	var errors []error
 	for _, record := range recordsToDelete {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
-			return err
+			errors = append(errors, fmt.Errorf("failed to delete record %s: %w", record.ID, err))
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to delete %d record(s): %v", len(errors), errors)
 	}
 	return nil
 }
@@ -207,9 +215,9 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 //
 // Error Handling:
 // - If creating a new record fails, any successfully created records are rolled back (best-effort).
-// - If deletion of old records fails after successfully creating new records, the function returns an error
-//   but leaves both old and new records in place. This is a known limitation - callers should be prepared
-//   to handle potential duplicate records in case of partial failure.
+// - If deletion of old records fails after successfully creating new records, the function continues
+//   deleting remaining records and returns an aggregate error. Both old and new records may exist
+//   temporarily until all deletions succeed.
 func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType string, newContents []string) error {
 	if len(newContents) == 0 {
 		log.Printf("Warning: ReplaceRecordsMultiple called with empty contents for %s (%s)", name, recordType)
