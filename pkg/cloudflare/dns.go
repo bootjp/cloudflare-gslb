@@ -13,6 +13,11 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
+// Sentinel errors for error comparison using errors.Is
+var (
+	ErrDeleteRecordsFailed = errors.New("failed to delete DNS records")
+)
+
 type cloudflareAPI interface {
 	New(ctx context.Context, params dns.RecordNewParams, opts ...option.RequestOption) (*dns.RecordResponse, error)
 	Delete(ctx context.Context, dnsRecordID string, body dns.RecordDeleteParams, opts ...option.RequestOption) (*dns.RecordDeleteResponse, error)
@@ -171,16 +176,17 @@ func (c *DNSClient) findRecordsToReplace(records []dns.RecordResponse, newConten
 // deleteRecords deletes all specified records. It continues deleting even if some deletions fail,
 // collecting all errors and returning an aggregate error at the end. This ensures maximum cleanup
 // even in the presence of partial failures.
+// The returned error wraps ErrDeleteRecordsFailed for comparison using errors.Is.
 func (c *DNSClient) deleteRecords(ctx context.Context, recordsToDelete []dns.RecordResponse) error {
-	var errors []error
+	var deleteErrors []error
 	for _, record := range recordsToDelete {
 		if err := c.DeleteDNSRecord(ctx, record.ID); err != nil {
-			errors = append(errors, fmt.Errorf("failed to delete record %s: %w", record.ID, err))
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete record %s: %w", record.ID, err))
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to delete %d record(s): %v", len(errors), errors)
+	if len(deleteErrors) > 0 {
+		return errors.Wrapf(ErrDeleteRecordsFailed, "failed to delete %d record(s): %v", len(deleteErrors), deleteErrors)
 	}
 	return nil
 }

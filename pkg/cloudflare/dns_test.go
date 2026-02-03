@@ -3,7 +3,6 @@ package cloudflare
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -966,9 +965,8 @@ func TestDNSClientReplaceRecordsDeleteError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
-	// Now deleteRecords continues deleting even if some fail, returning an aggregate error
-	// So we check that the error message contains the original error message
-	if !strings.Contains(err.Error(), "delete failed") {
-		t.Fatalf("expected error to contain 'delete failed', got %v", err)
+	// Now deleteRecords wraps ErrDeleteRecordsFailed for proper error comparison using errors.Is
+	if !crerrors.Is(err, ErrDeleteRecordsFailed) {
+		t.Fatalf("expected error to wrap ErrDeleteRecordsFailed, got %v", err)
 	}
 }
