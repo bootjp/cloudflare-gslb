@@ -256,14 +256,20 @@ func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType
 
 	// Find records to keep, records to delete, and contents to create
 	// 既存レコードに存在するコンテンツを追跡
+	//
+	// 重複削除の動作説明:
+	// 同じコンテンツを持つ既存のDNSレコードが複数ある場合、最初に見つかったレコードのみが保持され、
+	// 後続の重複レコードはすべて削除されます。これにより、DNS設定がクリーンな状態に維持されます。
+	// 例: 既存レコード [A: 1.1.1.1, B: 1.1.1.1] で newContents が [1.1.1.1] の場合、
+	// レコードAが保持され、レコードBは削除されます。
 	existingContents := make(map[string]bool)
 	var recordsToDelete []dns.RecordResponse
 	for _, record := range records {
-		if desiredContents[record.Content] {
-			// This record has desired content, keep it
+		if desiredContents[record.Content] && !existingContents[record.Content] {
+			// This record has desired content and is the first occurrence, keep it
 			existingContents[record.Content] = true
 		} else {
-			// This record doesn't have desired content, delete it
+			// This record doesn't have desired content, or is a duplicate, delete it
 			recordsToDelete = append(recordsToDelete, record)
 		}
 	}
