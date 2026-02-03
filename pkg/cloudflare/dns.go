@@ -203,7 +203,13 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType, newCon
 	return c.deleteRecords(ctx, recordsToDelete)
 }
 
-// ReplaceRecordsMultiple replaces all records with the given contents (supports multiple IPs with the same priority)
+// ReplaceRecordsMultiple replaces all records with the given contents (supports multiple IPs with the same priority).
+//
+// Error Handling:
+// - If creating a new record fails, any successfully created records are rolled back (best-effort).
+// - If deletion of old records fails after successfully creating new records, the function returns an error
+//   but leaves both old and new records in place. This is a known limitation - callers should be prepared
+//   to handle potential duplicate records in case of partial failure.
 func (c *DNSClient) ReplaceRecordsMultiple(ctx context.Context, name, recordType string, newContents []string) error {
 	if len(newContents) == 0 {
 		log.Printf("Warning: ReplaceRecordsMultiple called with empty contents for %s (%s)", name, recordType)

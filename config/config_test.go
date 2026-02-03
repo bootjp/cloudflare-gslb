@@ -439,6 +439,7 @@ func TestPriorityFailoverIPsBackwardCompatibility(t *testing.T) {
 	}
 
 	// Check that the priority IPs were correctly parsed with default priorities
+	// The first IP should have the highest priority (len - 1 - index)
 	origin := config.Origins[0]
 	if len(origin.PriorityFailoverIPs) != 2 {
 		t.Errorf("Expected 2 priority failover IPs, got %d", len(origin.PriorityFailoverIPs))
@@ -446,14 +447,14 @@ func TestPriorityFailoverIPsBackwardCompatibility(t *testing.T) {
 	if origin.PriorityFailoverIPs[0].IP != "192.168.1.1" {
 		t.Errorf("Expected first priority IP = '192.168.1.1', got '%s'", origin.PriorityFailoverIPs[0].IP)
 	}
-	if origin.PriorityFailoverIPs[0].Priority != 0 {
-		t.Errorf("Expected first priority value = 0, got %d", origin.PriorityFailoverIPs[0].Priority)
+	if origin.PriorityFailoverIPs[0].Priority != 1 { // First IP gets highest priority (len - 1 - 0 = 1)
+		t.Errorf("Expected first priority value = 1, got %d", origin.PriorityFailoverIPs[0].Priority)
 	}
 	if origin.PriorityFailoverIPs[1].IP != "192.168.1.2" {
 		t.Errorf("Expected second priority IP = '192.168.1.2', got '%s'", origin.PriorityFailoverIPs[1].IP)
 	}
-	if origin.PriorityFailoverIPs[1].Priority != 1 {
-		t.Errorf("Expected second priority value = 1, got %d", origin.PriorityFailoverIPs[1].Priority)
+	if origin.PriorityFailoverIPs[1].Priority != 0 { // Second IP gets lower priority (len - 1 - 1 = 0)
+		t.Errorf("Expected second priority value = 0, got %d", origin.PriorityFailoverIPs[1].Priority)
 	}
 }
 

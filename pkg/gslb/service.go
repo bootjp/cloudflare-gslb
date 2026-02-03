@@ -26,7 +26,8 @@ var (
 )
 
 type OriginStatus struct {
-	CurrentIP       string
+	CurrentIP       string   // 後方互換性のために残す（最初のIPを格納）
+	CurrentIPs      []string // 現在アクティブなすべてのIP（同一優先度の複数IPをサポート）
 	UsingPriority   bool
 	HealthyPriority bool
 	LastCheck       time.Time
@@ -232,18 +233,30 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 	status := s.originStatus[originKey]
 	s.originStatusMutex.RUnlock()
 
-	log.Printf("Checking priority IPs for %s, current status: UsingPriority=%t, HealthyPriority=%t, CurrentIP=%s",
-		origin.Name, status.UsingPriority, status.HealthyPriority, status.CurrentIP)
+	log.Printf("Checking priority IPs for %s, current status: UsingPriority=%t, HealthyPriority=%t, CurrentIPs=%v",
+		origin.Name, status.UsingPriority, status.HealthyPriority, status.CurrentIPs)
 
-	isPriorityIP := origin.IsPriorityIP(status.CurrentIP)
+	// すべてのアクティブなIPが優先IPかどうかをチェック
+	allPriorityIPs := true
+	if len(status.CurrentIPs) > 0 {
+		for _, ip := range status.CurrentIPs {
+			if !origin.IsPriorityIP(ip) {
+				allPriorityIPs = false
+				break
+			}
+		}
+	} else {
+		// 後方互換性: CurrentIPsが空の場合はCurrentIPをチェック
+		allPriorityIPs = origin.IsPriorityIP(status.CurrentIP)
+	}
 
-	if isPriorityIP != status.UsingPriority {
-		log.Printf("Fixing inconsistent state for %s: UsingPriority=%t but current IP %s is %s a priority IP",
-			origin.Name, status.UsingPriority, status.CurrentIP,
-			map[bool]string{true: "actually", false: "not"}[isPriorityIP])
+	if allPriorityIPs != status.UsingPriority {
+		log.Printf("Fixing inconsistent state for %s: UsingPriority=%t but current IPs are %s priority IPs",
+			origin.Name, status.UsingPriority,
+			map[bool]string{true: "actually", false: "not"}[allPriorityIPs])
 
 		s.originStatusMutex.Lock()
-		status.UsingPriority = isPriorityIP
+		status.UsingPriority = allPriorityIPs
 		s.originStatusMutex.Unlock()
 	}
 
@@ -299,10 +312,11 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 			return
 		}
 
-		// DNS更新が成功した場合のみ状態を更新（最初のIPを代表として保存）
+		// DNS更新が成功した場合のみ状態を更新（すべてのIPを追跡）
 		s.originStatusMutex.Lock()
 		status.HealthyPriority = true
-		status.CurrentIP = healthyPriorityIPs[0]
+		status.CurrentIP = healthyPriorityIPs[0] // 後方互換性のため
+		status.CurrentIPs = healthyPriorityIPs   // すべてのアクティブなIPを追跡
 		status.UsingPriority = true
 		s.originStatusMutex.Unlock()
 
@@ -364,6 +378,7 @@ func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig,
 	// OriginStatusの更新にはロックが必要
 	s.originStatusMutex.Lock()
 	status.CurrentIP = ip
+	status.CurrentIPs = []string{ip} // 単一IPの場合
 	s.originStatusMutex.Unlock()
 
 	err := checker.Check(ip)
@@ -388,6 +403,7 @@ func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig,
 		s.originStatusMutex.Lock()
 		status.UsingPriority = isPriorityIP
 		status.CurrentIP = ip
+		status.CurrentIPs = []string{ip}
 		status.LastCheck = time.Now()
 		s.originStatusMutex.Unlock()
 	}
@@ -411,7 +427,7 @@ func (s *Service) replaceUnhealthyRecord(ctx context.Context, origin config.Orig
 			return err
 		}
 
-		return s.useNextFailoverIP(ctx, origin, unhealthyRecord, dnsClient, originKey)
+		return s.useNextFailoverIP(ctx, origin, unhealthyRecord, dnsClient, originKey, status)
 	}
 
 	return errors.WithStack(ErrNoFailoverIPs)
@@ -440,12 +456,18 @@ func (s *Service) switchToPrimaryFailover(ctx context.Context, origin config.Ori
 		return err
 	}
 
+	// 状態を更新
+	s.originStatusMutex.Lock()
+	status.CurrentIP = newIP
+	status.CurrentIPs = []string{newIP}
+	s.originStatusMutex.Unlock()
+
 	// 通知を送信
 	s.sendNotifications(ctx, origin, oldIP, newIP, "Priority IP failed, switching to backup IP", false, true)
 	return nil
 }
 
-func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse, dnsClient cloudflare.DNSClientInterface, originKey string) error {
+func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginConfig, unhealthyRecord dns.RecordResponse, dnsClient cloudflare.DNSClientInterface, originKey string, status *OriginStatus) error {
 	s.failoverMutex.RLock()
 	currentIndex, exists := s.failoverIndices[originKey]
 	s.failoverMutex.RUnlock()
@@ -473,6 +495,12 @@ func (s *Service) useNextFailoverIP(ctx context.Context, origin config.OriginCon
 	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, newIP); err != nil {
 		return err
 	}
+
+	// 状態を更新
+	s.originStatusMutex.Lock()
+	status.CurrentIP = newIP
+	status.CurrentIPs = []string{newIP}
+	s.originStatusMutex.Unlock()
 
 	// 通知を送信
 	s.sendNotifications(ctx, origin, oldIP, newIP, "Health check failed, switching to backup IP", false, true)
