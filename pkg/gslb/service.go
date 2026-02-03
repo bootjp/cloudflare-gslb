@@ -237,16 +237,17 @@ func (s *Service) checkPriorityIPs(ctx context.Context, origin config.OriginConf
 		origin.Name, status.UsingPriority, status.HealthyPriority, status.CurrentIPs)
 
 	// すべてのアクティブなIPが優先IPかどうかをチェック
-	allPriorityIPs := true
+	allPriorityIPs := false
 	if len(status.CurrentIPs) > 0 {
+		allPriorityIPs = true
 		for _, ip := range status.CurrentIPs {
 			if !origin.IsPriorityIP(ip) {
 				allPriorityIPs = false
 				break
 			}
 		}
-	} else {
-		// 後方互換性: CurrentIPsが空の場合はCurrentIPをチェック
+	} else if status.CurrentIP != "" {
+		// 後方互換性: CurrentIPsが空の場合はCurrentIPをチェック（空でなければ）
 		allPriorityIPs = origin.IsPriorityIP(status.CurrentIP)
 	}
 
