@@ -15,7 +15,7 @@ type DNSClientMock struct {
 	DeleteDNSRecordFunc func(ctx context.Context, recordID string) error
 	CreateDNSRecordFunc func(ctx context.Context, name, recordType, content string) (dns.RecordResponse, error)
 	UpdateDNSRecordFunc func(ctx context.Context, recordID, name, recordType, content string) (dns.RecordResponse, error)
-	ReplaceRecordsFunc  func(ctx context.Context, name, recordType, newContent string) error
+	ReplaceRecordsFunc  func(ctx context.Context, name, recordType string, newContents []string) error
 }
 
 // インターフェースに準拠していることを確認
@@ -89,21 +89,23 @@ func (m *DNSClientMock) UpdateDNSRecord(ctx context.Context, recordID, name, rec
 }
 
 // ReplaceRecords はReplaceRecordsFuncを呼び出すか、デフォルトの実装を使用する
-func (m *DNSClientMock) ReplaceRecords(ctx context.Context, name, recordType, newContent string) error {
+func (m *DNSClientMock) ReplaceRecords(ctx context.Context, name, recordType string, newContents []string) error {
 	if m.ReplaceRecordsFunc != nil {
-		return m.ReplaceRecordsFunc(ctx, name, recordType, newContent)
+		return m.ReplaceRecordsFunc(ctx, name, recordType, newContents)
 	}
 
 	// レコードを置き換える
 	key := fmt.Sprintf("%s-%s", name, recordType)
-	m.Records[key] = []dns.RecordResponse{
-		{
-			ID:      fmt.Sprintf("mock-record-%s-%s", name, recordType),
+	records := make([]dns.RecordResponse, 0, len(newContents))
+	for i, content := range newContents {
+		records = append(records, dns.RecordResponse{
+			ID:      fmt.Sprintf("mock-record-%s-%s-%d", name, recordType, i),
 			Name:    name,
 			Type:    dns.RecordResponseType(recordType),
-			Content: newContent,
-		},
+			Content: content,
+		})
 	}
+	m.Records[key] = records
 
 	return nil
 }

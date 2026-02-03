@@ -11,9 +11,9 @@ import (
 
 // MockNotifier is a mock implementation of the Notifier interface for testing
 type MockNotifier struct {
-	NotifyCalled   bool
-	LastEvent      notifier.FailoverEvent
-	NotifyError    error
+	NotifyCalled    bool
+	LastEvent       notifier.FailoverEvent
+	NotifyError     error
 	NotifyCallCount int
 }
 
@@ -26,14 +26,17 @@ func (m *MockNotifier) Notify(ctx context.Context, event notifier.FailoverEvent)
 
 func TestService_sendNotifications(t *testing.T) {
 	tests := []struct {
-		name              string
-		origin            config.OriginConfig
-		oldIP             string
-		newIP             string
-		reason            string
-		isPriorityIP      bool
-		isFailoverIP      bool
-		expectNotifyCall  bool
+		name             string
+		origin           config.OriginConfig
+		oldIPs           []string
+		newIPs           []string
+		oldPriority      int
+		newPriority      int
+		maxPriority      int
+		reason           string
+		isPriorityIP     bool
+		isFailoverIP     bool
+		expectNotifyCall bool
 	}{
 		{
 			name: "send notification on failover",
@@ -42,8 +45,11 @@ func TestService_sendNotifications(t *testing.T) {
 				ZoneName:   "example.com",
 				RecordType: "A",
 			},
-			oldIP:            "192.168.1.1",
-			newIP:            "192.168.1.2",
+			oldIPs:           []string{"192.168.1.1"},
+			newIPs:           []string{"192.168.1.2"},
+			oldPriority:      100,
+			newPriority:      50,
+			maxPriority:      100,
 			reason:           "Health check failed",
 			isPriorityIP:     false,
 			isFailoverIP:     true,
@@ -57,8 +63,11 @@ func TestService_sendNotifications(t *testing.T) {
 				RecordType:       "A",
 				ReturnToPriority: true,
 			},
-			oldIP:            "192.168.1.2",
-			newIP:            "192.168.1.1",
+			oldIPs:           []string{"192.168.1.2"},
+			newIPs:           []string{"192.168.1.1", "192.168.1.3"},
+			oldPriority:      50,
+			newPriority:      100,
+			maxPriority:      100,
 			reason:           "Priority IP is healthy again",
 			isPriorityIP:     true,
 			isFailoverIP:     false,
@@ -73,19 +82,21 @@ func TestService_sendNotifications(t *testing.T) {
 
 			// Create a service with the mock notifier
 			service := &Service{
-				config: &config.Config{},
+				config:    &config.Config{},
 				notifiers: []notifier.Notifier{mockNotifier},
 			}
 
 			// Call sendNotifications
 			service.sendNotifications(
-				context.Background(),
 				tt.origin,
-				tt.oldIP,
-				tt.newIP,
+				tt.oldIPs,
+				tt.newIPs,
 				tt.reason,
 				tt.isPriorityIP,
 				tt.isFailoverIP,
+				tt.oldPriority,
+				tt.newPriority,
+				tt.maxPriority,
 			)
 
 			// Wait a bit for the goroutine to execute
@@ -104,11 +115,17 @@ func TestService_sendNotifications(t *testing.T) {
 				if mockNotifier.LastEvent.ZoneName != tt.origin.ZoneName {
 					t.Errorf("Expected zone name %s, got %s", tt.origin.ZoneName, mockNotifier.LastEvent.ZoneName)
 				}
-				if mockNotifier.LastEvent.OldIP != tt.oldIP {
-					t.Errorf("Expected old IP %s, got %s", tt.oldIP, mockNotifier.LastEvent.OldIP)
+				if mockNotifier.LastEvent.OldIP != firstIP(tt.oldIPs) {
+					t.Errorf("Expected old IP %s, got %s", firstIP(tt.oldIPs), mockNotifier.LastEvent.OldIP)
 				}
-				if mockNotifier.LastEvent.NewIP != tt.newIP {
-					t.Errorf("Expected new IP %s, got %s", tt.newIP, mockNotifier.LastEvent.NewIP)
+				if mockNotifier.LastEvent.NewIP != firstIP(tt.newIPs) {
+					t.Errorf("Expected new IP %s, got %s", firstIP(tt.newIPs), mockNotifier.LastEvent.NewIP)
+				}
+				if !sameStringSet(mockNotifier.LastEvent.OldIPs, tt.oldIPs) {
+					t.Errorf("Expected old IPs %v, got %v", tt.oldIPs, mockNotifier.LastEvent.OldIPs)
+				}
+				if !sameStringSet(mockNotifier.LastEvent.NewIPs, tt.newIPs) {
+					t.Errorf("Expected new IPs %v, got %v", tt.newIPs, mockNotifier.LastEvent.NewIPs)
 				}
 				if mockNotifier.LastEvent.Reason != tt.reason {
 					t.Errorf("Expected reason %s, got %s", tt.reason, mockNotifier.LastEvent.Reason)
@@ -118,6 +135,12 @@ func TestService_sendNotifications(t *testing.T) {
 				}
 				if mockNotifier.LastEvent.IsFailoverIP != tt.isFailoverIP {
 					t.Errorf("Expected IsFailoverIP %v, got %v", tt.isFailoverIP, mockNotifier.LastEvent.IsFailoverIP)
+				}
+				if mockNotifier.LastEvent.OldPriority != tt.oldPriority {
+					t.Errorf("Expected OldPriority %d, got %d", tt.oldPriority, mockNotifier.LastEvent.OldPriority)
+				}
+				if mockNotifier.LastEvent.NewPriority != tt.newPriority {
+					t.Errorf("Expected NewPriority %d, got %d", tt.newPriority, mockNotifier.LastEvent.NewPriority)
 				}
 			}
 		})
@@ -139,13 +162,15 @@ func TestService_sendNotifications_noNotifiers(t *testing.T) {
 
 	// This should not panic even without notifiers
 	service.sendNotifications(
-		context.Background(),
 		origin,
-		"192.168.1.1",
-		"192.168.1.2",
+		[]string{"192.168.1.1"},
+		[]string{"192.168.1.2"},
 		"Health check failed",
 		false,
 		true,
+		100,
+		50,
+		100,
 	)
 
 	// If we got here without panic, the test passes
@@ -158,7 +183,7 @@ func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
 
 	// Create a service with multiple notifiers
 	service := &Service{
-		config: &config.Config{},
+		config:    &config.Config{},
 		notifiers: []notifier.Notifier{mockNotifier1, mockNotifier2},
 	}
 
@@ -170,13 +195,15 @@ func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
 
 	// Call sendNotifications
 	service.sendNotifications(
-		context.Background(),
 		origin,
-		"192.168.1.1",
-		"192.168.1.2",
+		[]string{"192.168.1.1"},
+		[]string{"192.168.1.2"},
 		"Health check failed",
 		false,
 		true,
+		100,
+		50,
+		100,
 	)
 
 	// Wait for goroutines to execute

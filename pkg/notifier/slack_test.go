@@ -15,6 +15,8 @@ func TestSlackNotifier_Notify(t *testing.T) {
 		name          string
 		event         FailoverEvent
 		expectedColor string
+		expectedOld   string
+		expectedNew   string
 		wantError     bool
 		statusCode    int
 	}{
@@ -26,11 +28,15 @@ func TestSlackNotifier_Notify(t *testing.T) {
 				RecordType:   "A",
 				OldIP:        "192.168.1.1",
 				NewIP:        "192.168.1.2",
+				OldIPs:       []string{"192.168.1.1", "192.168.1.10"},
+				NewIPs:       []string{"192.168.1.2", "192.168.1.20"},
 				Reason:       "Health check failed",
 				Timestamp:    time.Now(),
 				IsFailoverIP: true,
 			},
 			expectedColor: "danger",
+			expectedOld:   "192.168.1.1\n192.168.1.10",
+			expectedNew:   "192.168.1.2\n192.168.1.20",
 			wantError:     false,
 			statusCode:    http.StatusOK,
 		},
@@ -42,12 +48,16 @@ func TestSlackNotifier_Notify(t *testing.T) {
 				RecordType:       "A",
 				OldIP:            "192.168.1.2",
 				NewIP:            "192.168.1.1",
+				OldIPs:           []string{"192.168.1.2"},
+				NewIPs:           []string{"192.168.1.1", "192.168.1.3"},
 				Reason:           "Priority IP is healthy again",
 				Timestamp:        time.Now(),
 				IsPriorityIP:     true,
 				ReturnToPriority: true,
 			},
 			expectedColor: "good",
+			expectedOld:   "192.168.1.2",
+			expectedNew:   "192.168.1.1\n192.168.1.3",
 			wantError:     false,
 			statusCode:    http.StatusOK,
 		},
@@ -93,6 +103,22 @@ func TestSlackNotifier_Notify(t *testing.T) {
 						t.Error("Expected attachments in message")
 					} else if msg.Attachments[0].Color != tt.expectedColor {
 						t.Errorf("Expected color %s, got %s", tt.expectedColor, msg.Attachments[0].Color)
+					} else {
+						var oldValue, newValue string
+						for _, field := range msg.Attachments[0].Fields {
+							if field.Title == "Old IPs" {
+								oldValue = field.Value
+							}
+							if field.Title == "New IPs" {
+								newValue = field.Value
+							}
+						}
+						if tt.expectedOld != "" && oldValue != tt.expectedOld {
+							t.Errorf("Expected Old IPs %q, got %q", tt.expectedOld, oldValue)
+						}
+						if tt.expectedNew != "" && newValue != tt.expectedNew {
+							t.Errorf("Expected New IPs %q, got %q", tt.expectedNew, newValue)
+						}
 					}
 				}
 

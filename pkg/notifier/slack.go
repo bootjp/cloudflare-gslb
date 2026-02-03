@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -60,8 +61,8 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 				Color: color,
 				Fields: []slackField{
 					{Title: "Origin", Value: fmt.Sprintf("%s.%s (%s)", event.OriginName, event.ZoneName, event.RecordType), Short: true},
-					{Title: "Old IP", Value: event.OldIP, Short: true},
-					{Title: "New IP", Value: event.NewIP, Short: true},
+					{Title: "Old IPs", Value: formatIPList(event.OldIPs, event.OldIP), Short: true},
+					{Title: "New IPs", Value: formatIPList(event.NewIPs, event.NewIP), Short: true},
 					{Title: "Event Type", Value: s.getEventType(event), Short: true},
 					{Title: "Reason", Value: event.Reason, Short: false},
 				},
@@ -107,4 +108,14 @@ func (s *SlackNotifier) getEventType(event FailoverEvent) string {
 	default:
 		return "Failover"
 	}
+}
+
+func formatIPList(ips []string, fallback string) string {
+	if len(ips) == 0 {
+		if fallback == "" {
+			return "-"
+		}
+		return fallback
+	}
+	return strings.Join(ips, "\n")
 }

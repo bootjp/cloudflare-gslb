@@ -109,7 +109,7 @@ func TestDNSClientReplaceRecordsCreatesWhenNoRecords(t *testing.T) {
 		ttl:     120,
 	}
 
-	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.10"); err != nil {
+	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.10"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestDNSClientReplaceRecordsUpdatesExistingRecord(t *testing.T) {
 		ttl:     300,
 	}
 
-	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.20"); err != nil {
+	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.20"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -181,7 +181,7 @@ func TestDNSClientReplaceRecordsDeletesDuplicateRecords(t *testing.T) {
 	}
 
 	start := time.Now()
-	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.30"); err != nil {
+	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.30"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// With two records to delete, expect at least 500ms delay
@@ -216,7 +216,7 @@ func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
 		ttl:     100,
 	}
 
-	err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.40")
+	err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.40"})
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -249,7 +249,7 @@ func TestDNSClientReplaceRecordsIdempotent(t *testing.T) {
 	}
 
 	// Try to replace with the same content - should be idempotent (no changes)
-	if err := client.ReplaceRecords(context.Background(), "example.com", "A", "203.0.113.20"); err != nil {
+	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.20"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -262,6 +262,38 @@ func TestDNSClientReplaceRecordsIdempotent(t *testing.T) {
 	}
 	if len(api.deleteCalls) != 0 {
 		t.Fatalf("expected no delete calls, got %d", len(api.deleteCalls))
+	}
+}
+
+func TestDNSClientReplaceRecordsMultipleContents(t *testing.T) {
+	api := &fakeCloudflareAPI{
+		listResp: []dns.RecordResponse{
+			{ID: "record-1", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.1", Proxied: false},
+			{ID: "record-2", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.2", Proxied: false},
+			{ID: "record-3", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.3", Proxied: false},
+			{ID: "record-4", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.1", Proxied: false}, // duplicate
+		},
+	}
+
+	client := &DNSClient{
+		api:     api,
+		zoneID:  "zone",
+		proxied: false,
+		ttl:     300,
+	}
+
+	err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"192.168.1.1", "192.168.1.2", "192.168.1.4"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// One missing record should be created
+	if len(api.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(api.createCalls))
+	}
+	// Two records should be deleted: one duplicate and one extra content
+	if len(api.deleteCalls) != 2 {
+		t.Fatalf("expected 2 delete calls, got %d", len(api.deleteCalls))
 	}
 }
 
@@ -726,7 +758,7 @@ func TestDNSClientReplaceRecordsMultiple(t *testing.T) {
 				ttl:     300,
 			}
 
-			err := client.ReplaceRecords(context.Background(), "example.com", "A", "192.168.1.100")
+			err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"192.168.1.100"})
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReplaceRecords() error = %v, wantErr %v", err, tt.wantErr)
@@ -912,7 +944,7 @@ func TestDNSClientReplaceRecordsListError(t *testing.T) {
 		ttl:     300,
 	}
 
-	err := client.ReplaceRecords(context.Background(), "example.com", "A", "192.168.1.1")
+	err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"192.168.1.1"})
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -935,7 +967,7 @@ func TestDNSClientReplaceRecordsCreateError(t *testing.T) {
 		ttl:     300,
 	}
 
-	err := client.ReplaceRecords(context.Background(), "example.com", "A", "192.168.1.1")
+	err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"192.168.1.1"})
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -961,7 +993,7 @@ func TestDNSClientReplaceRecordsDeleteError(t *testing.T) {
 		ttl:     300,
 	}
 
-	err := client.ReplaceRecords(context.Background(), "example.com", "A", "192.168.1.100")
+	err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"192.168.1.100"})
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}

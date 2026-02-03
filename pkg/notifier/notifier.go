@@ -12,11 +12,16 @@ type FailoverEvent struct {
 	RecordType       string
 	OldIP            string
 	NewIP            string
+	OldIPs           []string
+	NewIPs           []string
 	Reason           string
 	Timestamp        time.Time
 	IsPriorityIP     bool
 	IsFailoverIP     bool
 	ReturnToPriority bool
+	OldPriority      int
+	NewPriority      int
+	MaxPriority      int
 }
 
 // Notifier is the interface that all notifiers must implement
