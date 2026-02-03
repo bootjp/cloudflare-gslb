@@ -965,7 +965,7 @@ func TestDNSClientReplaceRecordsDeleteError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
-	// Now deleteRecords wraps ErrDeleteRecordsFailed for proper error comparison using errors.Is
+	// Now deleteRecords wraps errors with ErrDeleteRecordsFailed for proper error comparison using errors.Is
 	if !crerrors.Is(err, ErrDeleteRecordsFailed) {
 		t.Fatalf("expected error to wrap ErrDeleteRecordsFailed, got %v", err)
 	}
