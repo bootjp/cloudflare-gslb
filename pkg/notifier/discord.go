@@ -10,13 +10,11 @@ import (
 	"time"
 )
 
-// DiscordNotifier implements the Notifier interface for Discord webhooks
 type DiscordNotifier struct {
 	webhookURL string
 	httpClient *http.Client
 }
 
-// NewDiscordNotifier creates a new Discord notifier
 func NewDiscordNotifier(webhookURL string) *DiscordNotifier {
 	return &DiscordNotifier{
 		webhookURL: webhookURL,
@@ -26,7 +24,6 @@ func NewDiscordNotifier(webhookURL string) *DiscordNotifier {
 	}
 }
 
-// discordMessage represents the message structure for Discord webhook
 type discordMessage struct {
 	Content string         `json:"content,omitempty"`
 	Embeds  []discordEmbed `json:"embeds,omitempty"`
@@ -51,13 +48,12 @@ type discordFooter struct {
 	Text string `json:"text"`
 }
 
-// Notify sends a notification to Discord
 func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error {
-	color := 16776960 // Yellow for warning
+	color := 16776960
 	if event.ReturnToPriority && event.IsPriorityIP {
-		color = 5763719 // Green for success
+		color = 5763719
 	} else if event.IsFailoverIP {
-		color = 15158332 // Red for danger
+		color = 15158332
 	}
 
 	message := discordMessage{

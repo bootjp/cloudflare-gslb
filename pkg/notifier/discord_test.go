@@ -34,7 +34,7 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 				Timestamp:    time.Now(),
 				IsFailoverIP: true,
 			},
-			expectedColor: 15158332, // Red
+			expectedColor: 15158332,
 			expectedOld:   "192.168.1.1\n192.168.1.10",
 			expectedNew:   "192.168.1.2\n192.168.1.20",
 			wantError:     false,
@@ -55,7 +55,7 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 				IsPriorityIP:     true,
 				ReturnToPriority: true,
 			},
-			expectedColor: 5763719, // Green
+			expectedColor: 5763719,
 			expectedOld:   "192.168.1.2",
 			expectedNew:   "192.168.1.1\n192.168.1.3",
 			wantError:     false,
@@ -93,9 +93,7 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify the request
 				if r.Method != "POST" {
 					t.Errorf("Expected POST request, got %s", r.Method)
 				}
@@ -104,14 +102,12 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 					t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
 				}
 
-				// Read and parse the body
 				body, _ := io.ReadAll(r.Body)
 				var msg discordMessage
 				if err := json.Unmarshal(body, &msg); err != nil {
 					t.Errorf("Failed to unmarshal request body: %v", err)
 				}
 
-				// Verify message structure
 				if !tt.wantError && tt.statusCode == http.StatusOK {
 					if len(msg.Embeds) == 0 {
 						t.Error("Expected embeds in message")
@@ -140,13 +136,10 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Create notifier with test server URL
 			notifier := NewDiscordNotifier(server.URL)
 
-			// Call Notify
 			err := notifier.Notify(context.Background(), tt.event)
 
-			// Check error
 			if (err != nil) != tt.wantError {
 				t.Errorf("Notify() error = %v, wantError %v", err, tt.wantError)
 			}

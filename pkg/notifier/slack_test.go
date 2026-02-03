@@ -79,9 +79,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify the request
 				if r.Method != "POST" {
 					t.Errorf("Expected POST request, got %s", r.Method)
 				}
@@ -90,14 +88,12 @@ func TestSlackNotifier_Notify(t *testing.T) {
 					t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
 				}
 
-				// Read and parse the body
 				body, _ := io.ReadAll(r.Body)
 				var msg slackMessage
 				if err := json.Unmarshal(body, &msg); err != nil {
 					t.Errorf("Failed to unmarshal request body: %v", err)
 				}
 
-				// Verify message structure
 				if !tt.wantError {
 					if len(msg.Attachments) == 0 {
 						t.Error("Expected attachments in message")
@@ -126,13 +122,10 @@ func TestSlackNotifier_Notify(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Create notifier with test server URL
 			notifier := NewSlackNotifier(server.URL)
 
-			// Call Notify
 			err := notifier.Notify(context.Background(), tt.event)
 
-			// Check error
 			if (err != nil) != tt.wantError {
 				t.Errorf("Notify() error = %v, wantError %v", err, tt.wantError)
 			}

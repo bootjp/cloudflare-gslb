@@ -9,7 +9,6 @@ import (
 	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
 )
 
-// MockNotifier is a mock implementation of the Notifier interface for testing
 type MockNotifier struct {
 	NotifyCalled    bool
 	LastEvent       notifier.FailoverEvent
@@ -77,16 +76,13 @@ func TestService_sendNotifications(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock notifier
 			mockNotifier := &MockNotifier{}
 
-			// Create a service with the mock notifier
 			service := &Service{
 				config:    &config.Config{},
 				notifiers: []notifier.Notifier{mockNotifier},
 			}
 
-			// Call sendNotifications
 			service.sendNotifications(
 				tt.origin,
 				tt.oldIPs,
@@ -99,16 +95,13 @@ func TestService_sendNotifications(t *testing.T) {
 				tt.maxPriority,
 			)
 
-			// Wait a bit for the goroutine to execute
 			time.Sleep(100 * time.Millisecond)
 
-			// Verify the notification was sent
 			if tt.expectNotifyCall && !mockNotifier.NotifyCalled {
 				t.Error("Expected notification to be called, but it was not")
 			}
 
 			if mockNotifier.NotifyCalled {
-				// Verify event details
 				if mockNotifier.LastEvent.OriginName != tt.origin.Name {
 					t.Errorf("Expected origin name %s, got %s", tt.origin.Name, mockNotifier.LastEvent.OriginName)
 				}
@@ -148,7 +141,6 @@ func TestService_sendNotifications(t *testing.T) {
 }
 
 func TestService_sendNotifications_noNotifiers(t *testing.T) {
-	// Create a service without notifiers
 	service := &Service{
 		config:    &config.Config{},
 		notifiers: []notifier.Notifier{},
@@ -160,7 +152,6 @@ func TestService_sendNotifications_noNotifiers(t *testing.T) {
 		RecordType: "A",
 	}
 
-	// This should not panic even without notifiers
 	service.sendNotifications(
 		origin,
 		[]string{"192.168.1.1"},
@@ -173,15 +164,12 @@ func TestService_sendNotifications_noNotifiers(t *testing.T) {
 		100,
 	)
 
-	// If we got here without panic, the test passes
 }
 
 func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
-	// Create multiple mock notifiers
 	mockNotifier1 := &MockNotifier{}
 	mockNotifier2 := &MockNotifier{}
 
-	// Create a service with multiple notifiers
 	service := &Service{
 		config:    &config.Config{},
 		notifiers: []notifier.Notifier{mockNotifier1, mockNotifier2},
@@ -193,7 +181,6 @@ func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
 		RecordType: "A",
 	}
 
-	// Call sendNotifications
 	service.sendNotifications(
 		origin,
 		[]string{"192.168.1.1"},
@@ -206,10 +193,8 @@ func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
 		100,
 	)
 
-	// Wait for goroutines to execute
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify both notifiers were called
 	if !mockNotifier1.NotifyCalled {
 		t.Error("Expected first notifier to be called, but it was not")
 	}

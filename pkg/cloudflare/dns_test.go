@@ -12,7 +12,6 @@ import (
 	crerrors "github.com/cockroachdb/errors"
 )
 
-// createCall represents a create DNS record call
 type createCall struct {
 	name    string
 	rtype   string
@@ -21,7 +20,6 @@ type createCall struct {
 	proxied bool
 }
 
-// updateCall represents an update DNS record call
 type updateCall struct {
 	recordID string
 	name     string
@@ -54,13 +52,11 @@ func (f *fakeCloudflareAPI) List(ctx context.Context, params dns.RecordListParam
 }
 
 func (f *fakeCloudflareAPI) New(ctx context.Context, params dns.RecordNewParams, opts ...option.RequestOption) (*dns.RecordResponse, error) {
-	// We can't directly inspect the union type, so we'll infer from the test usage
-	// For simplicity, we'll create a call record with default values
 	call := createCall{
-		name:    "", // Would need type assertion to extract
-		rtype:   "", // Would need type assertion to extract
-		content: "", // Would need type assertion to extract
-		ttl:     0,  // Would need type assertion to extract
+		name:    "",
+		rtype:   "",
+		content: "",
+		ttl:     0,
 		proxied: false,
 	}
 	f.createCalls = append(f.createCalls, call)
@@ -147,7 +143,6 @@ func TestDNSClientReplaceRecordsUpdatesExistingRecord(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// With atomic approach: create new record first, then delete old one
 	if len(api.createCalls) != 1 {
 		t.Fatalf("expected create to be called once, got %d", len(api.createCalls))
 	}
@@ -184,12 +179,10 @@ func TestDNSClientReplaceRecordsDeletesDuplicateRecords(t *testing.T) {
 	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.30"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// With two records to delete, expect at least 500ms delay
 	if time.Since(start) < 500*time.Millisecond {
 		t.Fatalf("expected deletion to respect delay between operations")
 	}
 
-	// With atomic approach: create new record first, then delete both old ones
 	if len(api.createCalls) != 1 {
 		t.Fatalf("expected one create call, got %d", len(api.createCalls))
 	}
@@ -202,7 +195,6 @@ func TestDNSClientReplaceRecordsDeletesDuplicateRecords(t *testing.T) {
 }
 
 func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
-	// With atomic approach, we create instead of update, so test create error
 	expected := crerrors.New("create failed")
 	api := &fakeCloudflareAPI{
 		listResp:  []dns.RecordResponse{{ID: "record-1", Name: "example.com", Type: dns.RecordResponseTypeA, Proxied: false}},
@@ -228,8 +220,6 @@ func TestDNSClientReplaceRecordsUpdateError(t *testing.T) {
 	}
 }
 
-// TestDNSClientReplaceRecordsIdempotent tests that ReplaceRecords is idempotent
-// when the desired content already exists
 func TestDNSClientReplaceRecordsIdempotent(t *testing.T) {
 	api := &fakeCloudflareAPI{
 		listResp: []dns.RecordResponse{{
@@ -248,12 +238,10 @@ func TestDNSClientReplaceRecordsIdempotent(t *testing.T) {
 		ttl:     300,
 	}
 
-	// Try to replace with the same content - should be idempotent (no changes)
 	if err := client.ReplaceRecords(context.Background(), "example.com", "A", []string{"203.0.113.20"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// No operations should be performed since content matches
 	if len(api.createCalls) != 0 {
 		t.Fatalf("expected no create calls, got %d", len(api.createCalls))
 	}
@@ -271,7 +259,7 @@ func TestDNSClientReplaceRecordsMultipleContents(t *testing.T) {
 			{ID: "record-1", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.1", Proxied: false},
 			{ID: "record-2", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.2", Proxied: false},
 			{ID: "record-3", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.3", Proxied: false},
-			{ID: "record-4", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.1", Proxied: false}, // duplicate
+			{ID: "record-4", Name: "example.com", Type: dns.RecordResponseTypeA, Content: "192.168.1.1", Proxied: false},
 		},
 	}
 
@@ -287,17 +275,14 @@ func TestDNSClientReplaceRecordsMultipleContents(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// One missing record should be created
 	if len(api.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(api.createCalls))
 	}
-	// Two records should be deleted: one duplicate and one extra content
 	if len(api.deleteCalls) != 2 {
 		t.Fatalf("expected 2 delete calls, got %d", len(api.deleteCalls))
 	}
 }
 
-// TestDNSClientGetDNSRecords tests the GetDNSRecords method
 func TestDNSClientGetDNSRecords(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -366,7 +351,6 @@ func TestDNSClientGetDNSRecords(t *testing.T) {
 	}
 }
 
-// TestDNSClientDeleteDNSRecord tests the DeleteDNSRecord method
 func TestDNSClientDeleteDNSRecord(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -414,7 +398,6 @@ func TestDNSClientDeleteDNSRecord(t *testing.T) {
 	}
 }
 
-// TestDNSClientCreateDNSRecord tests the CreateDNSRecord method
 func TestDNSClientCreateDNSRecord(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -480,7 +463,6 @@ func TestDNSClientCreateDNSRecord(t *testing.T) {
 	}
 }
 
-// TestDNSClientUpdateDNSRecord tests the UpdateDNSRecord method
 func TestDNSClientUpdateDNSRecord(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -550,7 +532,6 @@ func TestDNSClientUpdateDNSRecord(t *testing.T) {
 	}
 }
 
-// TestDNSClientCreateError tests error handling in CreateDNSRecord
 func TestDNSClientCreateError(t *testing.T) {
 	expectedErr := crerrors.New("create failed")
 	api := &fakeCloudflareAPI{
@@ -572,7 +553,6 @@ func TestDNSClientCreateError(t *testing.T) {
 	}
 }
 
-// TestDNSClientDeleteError tests error handling in DeleteDNSRecord
 func TestDNSClientDeleteError(t *testing.T) {
 	expectedErr := crerrors.New("delete failed")
 	api := &fakeCloudflareAPI{
@@ -592,7 +572,6 @@ func TestDNSClientDeleteError(t *testing.T) {
 	}
 }
 
-// TestDNSClientListError tests error handling in GetDNSRecords
 func TestDNSClientListError(t *testing.T) {
 	expectedErr := crerrors.New("list failed")
 	api := &fakeCloudflareAPI{
@@ -612,7 +591,6 @@ func TestDNSClientListError(t *testing.T) {
 	}
 }
 
-// TestNewDNSClient tests the NewDNSClient constructor
 func TestNewDNSClient(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -666,7 +644,6 @@ func TestNewDNSClient(t *testing.T) {
 	}
 }
 
-// TestGetZoneID tests the GetZoneID method
 func TestGetZoneID(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -695,7 +672,6 @@ func TestGetZoneID(t *testing.T) {
 	}
 }
 
-// TestDNSClientReplaceRecordsMultiple tests ReplaceRecords with various scenarios
 func TestDNSClientReplaceRecordsMultiple(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -785,7 +761,6 @@ func TestDNSClientReplaceRecordsMultiple(t *testing.T) {
 	}
 }
 
-// TestDNSClientWithDifferentTTLValues tests DNS operations with various TTL values
 func TestDNSClientWithDifferentTTLValues(t *testing.T) {
 	tests := []struct {
 		name string
@@ -816,7 +791,6 @@ func TestDNSClientWithDifferentTTLValues(t *testing.T) {
 	}
 }
 
-// TestDNSClientProxiedSettings tests DNS operations with different proxied settings
 func TestDNSClientProxiedSettings(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -836,13 +810,11 @@ func TestDNSClientProxiedSettings(t *testing.T) {
 				ttl:     300,
 			}
 
-			// Test Create
 			_, err := client.CreateDNSRecord(context.Background(), "example.com", "A", "192.168.1.1")
 			if err != nil {
 				t.Errorf("CreateDNSRecord() with proxied=%v error = %v", tt.proxied, err)
 			}
 
-			// Test Update
 			_, err = client.UpdateDNSRecord(context.Background(), "record-1", "example.com", "A", "192.168.1.2")
 			if err != nil {
 				t.Errorf("UpdateDNSRecord() with proxied=%v error = %v", tt.proxied, err)
@@ -851,7 +823,6 @@ func TestDNSClientProxiedSettings(t *testing.T) {
 	}
 }
 
-// TestDNSClientRecordTypes tests DNS operations with different record types
 func TestDNSClientRecordTypes(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -872,13 +843,11 @@ func TestDNSClientRecordTypes(t *testing.T) {
 				ttl:     300,
 			}
 
-			// Test Create
 			_, err := client.CreateDNSRecord(context.Background(), "example.com", tt.recordType, tt.content)
 			if err != nil {
 				t.Errorf("CreateDNSRecord() with type %s error = %v", tt.recordType, err)
 			}
 
-			// Test Update
 			_, err = client.UpdateDNSRecord(context.Background(), "record-1", "example.com", tt.recordType, tt.content)
 			if err != nil {
 				t.Errorf("UpdateDNSRecord() with type %s error = %v", tt.recordType, err)
@@ -887,7 +856,6 @@ func TestDNSClientRecordTypes(t *testing.T) {
 	}
 }
 
-// TestDNSClientGetDNSRecordsMultiple tests GetDNSRecords with multiple records
 func TestDNSClientGetDNSRecordsMultiple(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -931,7 +899,6 @@ func TestDNSClientGetDNSRecordsMultiple(t *testing.T) {
 	}
 }
 
-// TestDNSClientReplaceRecordsListError tests error handling when listing fails
 func TestDNSClientReplaceRecordsListError(t *testing.T) {
 	expectedErr := crerrors.New("list failed")
 	api := &fakeCloudflareAPI{
@@ -953,11 +920,10 @@ func TestDNSClientReplaceRecordsListError(t *testing.T) {
 	}
 }
 
-// TestDNSClientReplaceRecordsCreateError tests error handling when creation fails
 func TestDNSClientReplaceRecordsCreateError(t *testing.T) {
 	expectedErr := crerrors.New("create failed")
 	api := &fakeCloudflareAPI{
-		listResp:  []dns.RecordResponse{}, // No existing records
+		listResp:  []dns.RecordResponse{},
 		createErr: expectedErr,
 	}
 	client := &DNSClient{
@@ -976,7 +942,6 @@ func TestDNSClientReplaceRecordsCreateError(t *testing.T) {
 	}
 }
 
-// TestDNSClientReplaceRecordsDeleteError tests error handling when deletion fails
 func TestDNSClientReplaceRecordsDeleteError(t *testing.T) {
 	expectedErr := crerrors.New("delete failed")
 	api := &fakeCloudflareAPI{

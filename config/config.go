@@ -7,48 +7,41 @@ import (
 	"time"
 )
 
-// Config はアプリケーションの設定を表す構造体
 type Config struct {
 	CloudflareAPIToken string               `json:"cloudflare_api_token"`
 	CloudflareZoneIDs  []ZoneConfig         `json:"cloudflare_zones"`
 	CheckInterval      time.Duration        `json:"check_interval_seconds"`
 	Origins            []OriginConfig       `json:"origins"`
-	Notifications      []NotificationConfig `json:"notifications"` // 通知設定
+	Notifications      []NotificationConfig `json:"notifications"`
 }
 
-// ZoneConfig はCloudflareゾーンの設定を表す構造体
 type ZoneConfig struct {
 	ZoneID string `json:"zone_id"`
 	Name   string `json:"name"`
 }
 
-// OriginConfig はオリジンサーバーの設定を表す構造体
 type OriginConfig struct {
 	Name                string          `json:"name"`
-	ZoneName            string          `json:"zone_name"`   // 対象のゾーン名
-	RecordType          string          `json:"record_type"` // "A" または "AAAA"
+	ZoneName            string          `json:"zone_name"`
+	RecordType          string          `json:"record_type"`
 	HealthCheck         HealthCheck     `json:"health_check"`
-	PriorityLevels      []PriorityLevel `json:"priority_levels,omitempty"`       // 優先度付きIPグループ（高い値ほど優先）
-	PriorityFailoverIPs []string        `json:"priority_failover_ips,omitempty"` // 互換用: 優先的に使用するフェイルオーバー用のIPアドレスリスト
-	FailoverIPs         []string        `json:"failover_ips,omitempty"`          // 互換用: フェイルオーバー用のIPアドレスリスト
-	Proxied             bool            `json:"proxied"`                         // Cloudflareのプロキシを有効にするかどうか
-	ReturnToPriority    bool            `json:"return_to_priority"`              // 正常に戻ったときに優先IPに戻すかどうか
+	PriorityLevels      []PriorityLevel `json:"priority_levels,omitempty"`
+	PriorityFailoverIPs []string        `json:"priority_failover_ips,omitempty"`
+	FailoverIPs         []string        `json:"failover_ips,omitempty"`
+	Proxied             bool            `json:"proxied"`
+	ReturnToPriority    bool            `json:"return_to_priority"`
 }
 
-// PriorityLevel は優先度付きIPグループを表す構造体
 type PriorityLevel struct {
 	Priority int      `json:"priority"`
 	IPs      []string `json:"ips"`
 }
 
 const (
-	// LegacyPriorityHigh は旧形式のpriority_failover_ipsに割り当てる優先度
 	LegacyPriorityHigh = 100
-	// LegacyPriorityLow は旧形式のfailover_ipsに割り当てる優先度
-	LegacyPriorityLow = 0
+	LegacyPriorityLow  = 0
 )
 
-// EffectivePriorityLevels は新旧両形式を統合した優先度付きIPグループを返す
 func (o OriginConfig) EffectivePriorityLevels() []PriorityLevel {
 	levels := NormalizePriorityLevels(o.PriorityLevels)
 	if len(levels) > 0 {
@@ -74,7 +67,6 @@ func legacyPriorityLevels(priorityIPs, failoverIPs []string) []PriorityLevel {
 	return levels
 }
 
-// NormalizePriorityLevels は同一優先度のIPを統合し、重複を除去する
 func NormalizePriorityLevels(levels []PriorityLevel) []PriorityLevel {
 	if len(levels) == 0 {
 		return nil
@@ -124,23 +116,20 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-// HealthCheck はヘルスチェックの設定を表す構造体
 type HealthCheck struct {
-	Type               string            `json:"type"`                 // "http", "https", "icmp"
-	Endpoint           string            `json:"endpoint"`             // HTTPSの場合のパス
-	Host               string            `json:"host"`                 // HTTPSの場合のホスト名
-	Timeout            int               `json:"timeout"`              // タイムアウト（秒）
-	InsecureSkipVerify bool              `json:"insecure_skip_verify"` // HTTPSの場合に証明書検証をスキップするかどうか
-	Headers            map[string]string `json:"headers"`              // ヘルスチェックリクエストに追加するHTTPヘッダ
+	Type               string            `json:"type"`
+	Endpoint           string            `json:"endpoint"`
+	Host               string            `json:"host"`
+	Timeout            int               `json:"timeout"`
+	InsecureSkipVerify bool              `json:"insecure_skip_verify"`
+	Headers            map[string]string `json:"headers"`
 }
 
-// NotificationConfig は通知設定を表す構造体
 type NotificationConfig struct {
-	Type       string `json:"type"`        // "slack" または "discord"
-	WebhookURL string `json:"webhook_url"` // WebhookのURL
+	Type       string `json:"type"`
+	WebhookURL string `json:"webhook_url"`
 }
 
-// LoadConfig は設定ファイルを読み込む関数
 func LoadConfig(path string) (*Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -198,7 +187,7 @@ func applyLegacyZoneConfig(config *Config, tmpConfig rawConfig) {
 	config.CloudflareZoneIDs = []ZoneConfig{
 		{
 			ZoneID: tmpConfig.CloudflareZoneID,
-			Name:   "default", // デフォルト名
+			Name:   "default",
 		},
 	}
 

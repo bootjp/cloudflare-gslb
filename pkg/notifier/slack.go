@@ -10,13 +10,11 @@ import (
 	"time"
 )
 
-// SlackNotifier implements the Notifier interface for Slack webhooks
 type SlackNotifier struct {
 	webhookURL string
 	httpClient *http.Client
 }
 
-// NewSlackNotifier creates a new Slack notifier
 func NewSlackNotifier(webhookURL string) *SlackNotifier {
 	return &SlackNotifier{
 		webhookURL: webhookURL,
@@ -26,7 +24,6 @@ func NewSlackNotifier(webhookURL string) *SlackNotifier {
 	}
 }
 
-// slackMessage represents the message structure for Slack webhook
 type slackMessage struct {
 	Text        string            `json:"text"`
 	Attachments []slackAttachment `json:"attachments,omitempty"`
@@ -45,7 +42,6 @@ type slackField struct {
 	Short bool   `json:"short"`
 }
 
-// Notify sends a notification to Slack
 func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	color := "warning"
 	if event.ReturnToPriority && event.IsPriorityIP {
