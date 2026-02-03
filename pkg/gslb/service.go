@@ -423,10 +423,21 @@ func (s *Service) processRecord(ctx context.Context, origin config.OriginConfig,
 	} else {
 		log.Printf("Health check passed for %s (%s)", origin.Name, ip)
 
-		isPriorityIP := origin.IsPriorityIP(ip)
-
+		// UsingPriority should reflect whether *all* current IPs are priority IPs,
+		// not just the last-checked IP. CurrentIPs is maintained in checkOrigin.
 		s.originStatusMutex.Lock()
-		status.UsingPriority = isPriorityIP
+		allPriority := true
+		if len(status.CurrentIPs) == 0 {
+			allPriority = false
+		} else {
+			for _, currentIP := range status.CurrentIPs {
+				if !origin.IsPriorityIP(currentIP) {
+					allPriority = false
+					break
+				}
+			}
+		}
+		status.UsingPriority = allPriority
 		status.LastCheck = time.Now()
 		s.originStatusMutex.Unlock()
 	}
