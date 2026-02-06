@@ -1,0 +1,67 @@
+cloudflare_api_token: YOUR_CLOUDFLARE_API_TOKEN
+check_interval_seconds: 60
+cloudflare_zones:
+  - zone_id: YOUR_CLOUDFLARE_ZONE_ID_1
+    name: example.com
+  - zone_id: YOUR_CLOUDFLARE_ZONE_ID_2
+    name: example.org
+notifications:
+  - type: slack
+    webhook_url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+  - type: discord
+    webhook_url: https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK
+origins:
+  - name: www
+    zone_name: example.com
+    record_type: A
+    health_check:
+      type: https
+      endpoint: /health
+      host: www.example.com
+      timeout: 5
+    priority_levels:
+      - priority: 100
+        ips:
+          - 192.168.1.1
+          - 192.168.1.2
+      - priority: 50
+        ips:
+          - 192.168.1.3
+          - 192.168.1.4
+    proxied: true
+    return_to_priority: true
+  - name: api
+    zone_name: example.com
+    record_type: A
+    health_check:
+      type: http
+      endpoint: /status
+      host: api.example.com
+      timeout: 5
+    priority_levels:
+      - priority: 100
+        ips:
+          - 10.0.0.1
+      - priority: 50
+        ips:
+          - 10.0.0.2
+          - 10.0.0.3
+    proxied: true
+    return_to_priority: true
+  - name: ipv6
+    zone_name: example.org
+    record_type: AAAA
+    health_check:
+      type: icmp
+      timeout: 5
+    priority_levels:
+      - priority: 100
+        ips:
+          - "2001:db8::1"
+      - priority: 50
+        ips:
+          - "2001:db8::2"
+          - "2001:db8::3"
+          - "2001:db8::4"
+    proxied: false
+    return_to_priority: true
