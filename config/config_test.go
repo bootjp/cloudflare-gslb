@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -695,5 +697,111 @@ origins:
 	_, err = LoadConfig(tmpfile.Name())
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for invalid YAML, got nil")
+	}
+}
+
+func TestLoadConfig_DirectoryWithConfigFile(t *testing.T) {
+	// Create a temporary directory
+	tmpDir, err := os.MkdirTemp("", "config_dir_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test with config.yaml
+	yamlContent := `cloudflare_api_token: test-token-yaml
+check_interval_seconds: 30
+cloudflare_zones:
+  - zone_id: test-zone
+    name: example.com
+origins:
+  - name: www
+    zone_name: example.com
+    record_type: A
+    health_check:
+      type: https
+      endpoint: /health
+      host: www.example.com
+      timeout: 5
+    priority_levels:
+      - priority: 100
+        ips: [192.168.1.1]
+`
+	yamlPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write config.yaml: %v", err)
+	}
+
+	// Load config from directory (should find config.yaml)
+	config, err := LoadConfig(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() with directory failed: %v", err)
+	}
+
+	if config.CloudflareAPIToken != "test-token-yaml" {
+		t.Errorf("Expected CloudflareAPIToken = 'test-token-yaml', got '%s'", config.CloudflareAPIToken)
+	}
+	if config.CheckInterval != 30*time.Second {
+		t.Errorf("Expected CheckInterval = 30s, got %v", config.CheckInterval)
+	}
+}
+
+func TestLoadConfig_DirectoryWithMultipleConfigFiles(t *testing.T) {
+	// Create a temporary directory
+	tmpDir, err := os.MkdirTemp("", "config_dir_multi_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create both YAML and JSON configs (YAML should be preferred)
+	yamlContent := `cloudflare_api_token: yaml-token
+check_interval_seconds: 30
+cloudflare_zones:
+  - zone_id: test-zone
+    name: example.com
+`
+	jsonContent := `{
+		"cloudflare_api_token": "json-token",
+		"check_interval_seconds": 60,
+		"cloudflare_zones": [{"zone_id": "test-zone", "name": "example.com"}]
+	}`
+
+	yamlPath := filepath.Join(tmpDir, "config.yaml")
+	jsonPath := filepath.Join(tmpDir, "config.json")
+
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write config.yaml: %v", err)
+	}
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write config.json: %v", err)
+	}
+
+	// Load config from directory (should prefer config.yaml)
+	config, err := LoadConfig(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() with directory failed: %v", err)
+	}
+
+	if config.CloudflareAPIToken != "yaml-token" {
+		t.Errorf("Expected YAML to be preferred, got token '%s'", config.CloudflareAPIToken)
+	}
+}
+
+func TestLoadConfig_DirectoryWithoutConfigFile(t *testing.T) {
+	// Create a temporary directory with no config files
+	tmpDir, err := os.MkdirTemp("", "config_dir_empty_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Try to load config from empty directory
+	_, err = LoadConfig(tmpDir)
+	if err == nil {
+		t.Errorf("LoadConfig() expected error for directory without config, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no config file found") {
+		t.Errorf("Expected 'no config file found' error, got: %v", err)
 	}
 }

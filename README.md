@@ -361,6 +361,17 @@ You can also specify an alternative configuration file path:
 ./gslb -config /path/to/your/config.yaml
 ```
 
+**Using a directory path:**
+
+If you provide a directory path, the application will automatically search for configuration files in this order:
+1. `config.yaml`
+2. `config.yml`
+3. `config.json`
+
+```bash
+./gslb -config /path/to/config/directory
+```
+
 ### One-shot Mode
 
 One-shot mode performs health checks and necessary failovers once without running continuously:

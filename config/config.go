@@ -146,6 +146,31 @@ type NotificationConfig struct {
 
 // LoadConfig は設定ファイルを読み込む関数
 func LoadConfig(path string) (*Config, error) {
+	// Check if path is a directory
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// If directory, look for default config files
+	if fileInfo.IsDir() {
+		configFiles := []string{"config.yaml", "config.yml", "config.json"}
+		for _, configFile := range configFiles {
+			configPath := filepath.Join(path, configFile)
+			if _, err := os.Stat(configPath); err == nil {
+				path = configPath
+				break
+			}
+		}
+		// Re-check if we found a file or still have a directory
+		if fileInfo, err = os.Stat(path); err != nil {
+			return nil, err
+		}
+		if fileInfo.IsDir() {
+			return nil, fmt.Errorf("no config file found in directory: %s", path)
+		}
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
