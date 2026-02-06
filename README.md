@@ -69,7 +69,10 @@ Example configuration file:
         "type": "https",
         "endpoint": "/health",
         "host": "www.example.com",
-        "timeout": 5
+        "timeout": 5,
+        "headers": {
+          "X-Health-Check": "gslb"
+        }
       },
       "priority_levels": [
         {
@@ -98,7 +101,10 @@ Example configuration file:
         "type": "http",
         "endpoint": "/status",
         "host": "api.example.com",
-        "timeout": 5
+        "timeout": 5,
+        "headers": {
+          "X-Health-Check": "gslb"
+        }
       },
       "priority_levels": [
         {
