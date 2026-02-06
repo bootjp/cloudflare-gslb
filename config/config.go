@@ -154,20 +154,19 @@ func LoadConfig(path string) (*Config, error) {
 
 	// If directory, look for default config files
 	if fileInfo.IsDir() {
+		originalPath := path
 		configFiles := []string{"config.yaml", "config.yml", "config.json"}
+		found := false
 		for _, configFile := range configFiles {
 			configPath := filepath.Join(path, configFile)
 			if _, err := os.Stat(configPath); err == nil {
 				path = configPath
+				found = true
 				break
 			}
 		}
-		// Re-check if we found a file or still have a directory
-		if fileInfo, err = os.Stat(path); err != nil {
-			return nil, err
-		}
-		if fileInfo.IsDir() {
-			return nil, fmt.Errorf("no config file found in directory: %s", path)
+		if !found {
+			return nil, fmt.Errorf("no config file found in directory: %s", originalPath)
 		}
 	}
 

@@ -754,13 +754,15 @@ func TestLoadConfig_DirectoryWithMultipleConfigFiles(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create both YAML and JSON configs (YAML should be preferred)
+	// Create both YAML and JSON configs to test precedence order
+	// YAML should be preferred over JSON
 	yamlContent := `cloudflare_api_token: yaml-token
 check_interval_seconds: 30
 cloudflare_zones:
   - zone_id: test-zone
     name: example.com
 `
+	// JSON config with different token to verify YAML takes precedence
 	jsonContent := `{
 		"cloudflare_api_token": "json-token",
 		"check_interval_seconds": 60,
