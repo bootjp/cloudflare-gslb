@@ -35,8 +35,8 @@ type OriginConfig struct {
 	PriorityLevels      []PriorityLevel `json:"priority_levels,omitempty" yaml:"priority_levels,omitempty"`             // 優先度付きIPグループ（高い値ほど優先）
 	PriorityFailoverIPs []string        `json:"priority_failover_ips,omitempty" yaml:"priority_failover_ips,omitempty"` // 互換用: 優先的に使用するフェイルオーバー用のIPアドレスリスト
 	FailoverIPs         []string        `json:"failover_ips,omitempty" yaml:"failover_ips,omitempty"`                   // 互換用: フェイルオーバー用のIPアドレスリスト
-	Proxied             bool            `json:"proxied" yaml:"proxied"`                                                  // Cloudflareのプロキシを有効にするかどうか
-	ReturnToPriority    bool            `json:"return_to_priority" yaml:"return_to_priority"`                            // 正常に戻ったときに優先IPに戻すかどうか
+	Proxied             bool            `json:"proxied" yaml:"proxied"`                                                 // Cloudflareのプロキシを有効にするかどうか
+	ReturnToPriority    bool            `json:"return_to_priority" yaml:"return_to_priority"`                           // 正常に戻ったときに優先IPに戻すかどうか
 }
 
 // PriorityLevel は優先度付きIPグループを表す構造体
@@ -130,12 +130,12 @@ func uniqueStrings(values []string) []string {
 
 // HealthCheck はヘルスチェックの設定を表す構造体
 type HealthCheck struct {
-	Type               string            `json:"type" yaml:"type"`                                   // "http", "https", "icmp"
-	Endpoint           string            `json:"endpoint" yaml:"endpoint"`                           // HTTPSの場合のパス
-	Host               string            `json:"host" yaml:"host"`                                   // HTTPSの場合のホスト名
-	Timeout            int               `json:"timeout" yaml:"timeout"`                             // タイムアウト（秒）
-	InsecureSkipVerify bool              `json:"insecure_skip_verify" yaml:"insecure_skip_verify"`   // HTTPSの場合に証明書検証をスキップするかどうか
-	Headers            map[string]string `json:"headers" yaml:"headers"`                             // ヘルスチェックリクエストに追加するHTTPヘッダ
+	Type               string            `json:"type" yaml:"type"`                                 // "http", "https", "icmp"
+	Endpoint           string            `json:"endpoint" yaml:"endpoint"`                         // HTTPSの場合のパス
+	Host               string            `json:"host" yaml:"host"`                                 // HTTPSの場合のホスト名
+	Timeout            int               `json:"timeout" yaml:"timeout"`                           // タイムアウト（秒）
+	InsecureSkipVerify bool              `json:"insecure_skip_verify" yaml:"insecure_skip_verify"` // HTTPSの場合に証明書検証をスキップするかどうか
+	Headers            map[string]string `json:"headers" yaml:"headers"`                           // ヘルスチェックリクエストに追加するHTTPヘッダ
 }
 
 // NotificationConfig は通知設定を表す構造体
@@ -177,16 +177,16 @@ type rawConfig struct {
 
 func decodeConfig(file *os.File) (rawConfig, error) {
 	var tmpConfig rawConfig
-	
+
 	// Determine file format based on file name extension
 	ext := strings.ToLower(filepath.Ext(file.Name()))
-	
+
 	// Read file content
 	data, err := os.ReadFile(file.Name())
 	if err != nil {
 		return rawConfig{}, err
 	}
-	
+
 	switch ext {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, &tmpConfig); err != nil {
@@ -202,7 +202,7 @@ func decodeConfig(file *os.File) (rawConfig, error) {
 			return rawConfig{}, fmt.Errorf("failed to parse config (assumed JSON): %w", err)
 		}
 	}
-	
+
 	return tmpConfig, nil
 }
 
