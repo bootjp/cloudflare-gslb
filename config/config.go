@@ -146,15 +146,6 @@ type NotificationConfig struct {
 
 // LoadConfig は設定ファイルを読み込む関数
 func LoadConfig(path string) (*Config, error) {
-	// Check if path is a directory
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if fileInfo.IsDir() {
-		return nil, fmt.Errorf("path is a directory, not a file: %s", path)
-	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
