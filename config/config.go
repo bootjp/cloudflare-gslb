@@ -146,13 +146,12 @@ type NotificationConfig struct {
 
 // LoadConfig は設定ファイルを読み込む関数
 func LoadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
-	tmpConfig, err := decodeConfig(file)
+	tmpConfig, err := decodeConfig(path, data)
 	if err != nil {
 		return nil, err
 	}
@@ -175,17 +174,11 @@ type rawConfig struct {
 	Notifications      []NotificationConfig `json:"notifications" yaml:"notifications"`
 }
 
-func decodeConfig(file *os.File) (rawConfig, error) {
+func decodeConfig(path string, data []byte) (rawConfig, error) {
 	var tmpConfig rawConfig
 
 	// Determine file format based on file name extension
-	ext := strings.ToLower(filepath.Ext(file.Name()))
-
-	// Read file content
-	data, err := os.ReadFile(file.Name())
-	if err != nil {
-		return rawConfig{}, err
-	}
+	ext := strings.ToLower(filepath.Ext(path))
 
 	switch ext {
 	case ".yaml", ".yml":

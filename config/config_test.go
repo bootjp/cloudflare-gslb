@@ -675,9 +675,8 @@ origins:
     health_check:
       type: https
       endpoint: /health
-      host: example.com
+      host: "unclosed quote
       timeout: 5
-    - invalid indent
 `
 
 	tmpfile, err := os.CreateTemp("", "invalid_yaml_*.yaml")
