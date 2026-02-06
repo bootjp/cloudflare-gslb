@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -695,5 +696,22 @@ origins:
 	_, err = LoadConfig(tmpfile.Name())
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for invalid YAML, got nil")
+	}
+}
+
+func TestLoadConfig_DirectoryPath(t *testing.T) {
+	// Try to load a directory path instead of a file
+	tmpDir, err := os.MkdirTemp("", "config_dir_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	_, err = LoadConfig(tmpDir)
+	if err == nil {
+		t.Errorf("LoadConfig() expected error for directory path, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "is a directory") {
+		t.Errorf("LoadConfig() expected 'is a directory' error, got: %v", err)
 	}
 }
