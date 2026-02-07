@@ -1,9 +1,9 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -803,7 +803,7 @@ func TestLoadConfig_DirectoryWithoutConfigFile(t *testing.T) {
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for directory without config, got nil")
 	}
-	if err != nil && !strings.Contains(err.Error(), "no config file found") {
-		t.Errorf("Expected 'no config file found' error, got: %v", err)
+	if err != nil && !errors.Is(err, ErrNoConfigFound) {
+		t.Errorf("Expected ErrNoConfigFound, got: %v", err)
 	}
 }

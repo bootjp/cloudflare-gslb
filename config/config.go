@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,18 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+// Error definitions
+var (
+	// ErrNoConfigFound is returned when no config file is found in a directory
+	ErrNoConfigFound = errors.New("no config file found in directory")
+	// ErrUnsupportedRecordType is returned when an unsupported DNS record type is specified
+	ErrUnsupportedRecordType = errors.New("unsupported record type")
+	// ErrParseYAML is returned when YAML parsing fails
+	ErrParseYAML = errors.New("failed to parse YAML")
+	// ErrParseJSON is returned when JSON parsing fails
+	ErrParseJSON = errors.New("failed to parse JSON")
 )
 
 // Config はアプリケーションの設定を表す構造体
@@ -166,7 +179,7 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("no config file found in directory: %s", originalPath)
+			return nil, fmt.Errorf("%w: %s", ErrNoConfigFound, originalPath)
 		}
 	}
 
@@ -207,16 +220,16 @@ func decodeConfig(path string, data []byte) (rawConfig, error) {
 	switch ext {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, &tmpConfig); err != nil {
-			return rawConfig{}, fmt.Errorf("failed to parse YAML: %w", err)
+			return rawConfig{}, fmt.Errorf("%w: %w", ErrParseYAML, err)
 		}
 	case ".json":
 		if err := json.Unmarshal(data, &tmpConfig); err != nil {
-			return rawConfig{}, fmt.Errorf("failed to parse JSON: %w", err)
+			return rawConfig{}, fmt.Errorf("%w: %w", ErrParseJSON, err)
 		}
 	default:
 		// Default to JSON for backward compatibility
 		if err := json.Unmarshal(data, &tmpConfig); err != nil {
-			return rawConfig{}, fmt.Errorf("failed to parse config (assumed JSON): %w", err)
+			return rawConfig{}, fmt.Errorf("%w (assumed JSON): %w", ErrParseJSON, err)
 		}
 	}
 
@@ -289,5 +302,5 @@ func validateRecordType(recordType string) error {
 	if recordType == "A" || recordType == "AAAA" {
 		return nil
 	}
-	return fmt.Errorf("unsupported record type: %s", recordType)
+	return fmt.Errorf("%w: %s", ErrUnsupportedRecordType, recordType)
 }
