@@ -12,6 +12,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// File extension constants
+const (
+	extYAML = ".yaml"
+	extYML  = ".yml"
+	extJSON = ".json"
+)
+
+// Default config file names
+const (
+	configFileYAML = "config" + extYAML
+	configFileYML  = "config" + extYML
+	configFileJSON = "config" + extJSON
+)
+
 // Error definitions
 var (
 	// ErrNoConfigFound is returned when no config file is found in a directory
@@ -168,7 +182,7 @@ func LoadConfig(path string) (*Config, error) {
 	// If directory, look for default config files
 	if fileInfo.IsDir() {
 		originalPath := path
-		configFiles := []string{"config.yaml", "config.yml", "config.json"}
+		configFiles := []string{configFileYAML, configFileYML, configFileJSON}
 		found := false
 		for _, configFile := range configFiles {
 			configPath := filepath.Join(path, configFile)
@@ -218,11 +232,11 @@ func decodeConfig(ext string, data []byte) (rawConfig, error) {
 
 	// Decode based on file extension
 	switch ext {
-	case ".yaml", ".yml":
+	case extYAML, extYML:
 		if err := yaml.Unmarshal(data, &tmpConfig); err != nil {
 			return rawConfig{}, fmt.Errorf("%w: %w", ErrParseYAML, err)
 		}
-	case ".json":
+	case extJSON:
 		if err := json.Unmarshal(data, &tmpConfig); err != nil {
 			return rawConfig{}, fmt.Errorf("%w: %w", ErrParseJSON, err)
 		}
