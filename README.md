@@ -28,10 +28,22 @@ go build -o gslb ./cmd/gslb
 
 ## Configuration
 
+Cloudflare GSLB supports both **JSON** and **YAML** configuration file formats. You can use whichever format you prefer.
+
+### JSON Configuration
+
 Copy `config.json.example` to create `config.json` and configure the necessary settings.
 
 ```bash
 cp config.json.example config.json
+```
+
+### YAML Configuration
+
+Alternatively, you can use YAML format by copying `config.yaml.example`:
+
+```bash
+cp config.yaml.example config.yaml
 ```
 
 Example configuration file:
@@ -335,14 +347,35 @@ Each notification includes:
 
 ## Usage
 
+The application accepts both JSON and YAML configuration files. The file format is automatically detected based on the file extension (`.json`, `.yaml`, or `.yml`).
+
+**Using JSON configuration:**
 ```bash
 ./gslb -config config.json
+```
+
+**Using YAML configuration:**
+```bash
+./gslb -config config.yaml
 ```
 
 You can also specify an alternative configuration file path:
 
 ```bash
 ./gslb -config /path/to/your/config.json
+# or
+./gslb -config /path/to/your/config.yaml
+```
+
+**Using a directory path:**
+
+If you provide a directory path, the application will automatically search for configuration files in this order:
+1. `config.yaml`
+2. `config.yml`
+3. `config.json`
+
+```bash
+./gslb -config /path/to/config/directory
 ```
 
 ### One-shot Mode
@@ -351,6 +384,8 @@ One-shot mode performs health checks and necessary failovers once without runnin
 
 ```bash
 ./cloudflare-gslb-oneshot -config config.json
+# or with YAML
+./cloudflare-gslb-oneshot -config config.yaml
 ```
 
 This is useful for:
@@ -366,13 +401,21 @@ The application is available as Docker images for both continuous and one-shot m
 #### Continuous Mode
 
 ```bash
+# With JSON configuration
 docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb:main
+
+# With YAML configuration
+docker run -v /path/to/your/config.yaml:/app/config/config.yaml ghcr.io/bootjp/cloudflare-gslb:main
 ```
 
 #### One-shot Mode
 
 ```bash
+# With JSON configuration
 docker run -v /path/to/your/config.json:/app/config/config.json ghcr.io/bootjp/cloudflare-gslb-oneshot:main
+
+# With YAML configuration
+docker run -v /path/to/your/config.yaml:/app/config/config.yaml ghcr.io/bootjp/cloudflare-gslb-oneshot:main
 ```
 
 Both images support multiple architectures (amd64/x86_64 and arm64) automatically.

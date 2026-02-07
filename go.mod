@@ -6,6 +6,7 @@ require (
 	github.com/cloudflare/cloudflare-go/v6 v6.6.0
 	github.com/cockroachdb/errors v1.12.0
 	golang.org/x/net v0.49.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
