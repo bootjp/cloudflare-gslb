@@ -803,7 +803,7 @@ func TestLoadConfig_DirectoryWithoutConfigFile(t *testing.T) {
 	if err == nil {
 		t.Errorf("LoadConfig() expected error for directory without config, got nil")
 	}
-	if err != nil && !errors.Is(err, ErrNoConfigFound) {
+	if !errors.Is(err, ErrNoConfigFound) {
 		t.Errorf("Expected ErrNoConfigFound, got: %v", err)
 	}
 }
