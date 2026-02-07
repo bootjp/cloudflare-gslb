@@ -12,18 +12,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// fileExt represents a file extension type for config files
+type fileExt string
+
 // File extension constants
 const (
-	extYAML = ".yaml"
-	extYML  = ".yml"
-	extJSON = ".json"
+	extYAML fileExt = ".yaml"
+	extYML  fileExt = ".yml"
+	extJSON fileExt = ".json"
 )
 
 // Default config file names
 const (
-	configFileYAML = "config" + extYAML
-	configFileYML  = "config" + extYML
-	configFileJSON = "config" + extJSON
+	configFileYAML = "config.yaml"
+	configFileYML  = "config.yml"
+	configFileJSON = "config.json"
 )
 
 // Error definitions
@@ -203,7 +206,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Determine file format based on file name extension
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := fileExt(strings.ToLower(filepath.Ext(path)))
 	tmpConfig, err := decodeConfig(ext, data)
 	if err != nil {
 		return nil, err
@@ -227,7 +230,7 @@ type rawConfig struct {
 	Notifications      []NotificationConfig `json:"notifications" yaml:"notifications"`
 }
 
-func decodeConfig(ext string, data []byte) (rawConfig, error) {
+func decodeConfig(ext fileExt, data []byte) (rawConfig, error) {
 	var tmpConfig rawConfig
 
 	// Decode based on file extension
