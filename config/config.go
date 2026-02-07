@@ -188,7 +188,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	tmpConfig, err := decodeConfig(path, data)
+	// Determine file format based on file name extension
+	ext := strings.ToLower(filepath.Ext(path))
+	tmpConfig, err := decodeConfig(ext, data)
 	if err != nil {
 		return nil, err
 	}
@@ -211,12 +213,10 @@ type rawConfig struct {
 	Notifications      []NotificationConfig `json:"notifications" yaml:"notifications"`
 }
 
-func decodeConfig(path string, data []byte) (rawConfig, error) {
+func decodeConfig(ext string, data []byte) (rawConfig, error) {
 	var tmpConfig rawConfig
 
-	// Determine file format based on file name extension
-	ext := strings.ToLower(filepath.Ext(path))
-
+	// Decode based on file extension
 	switch ext {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, &tmpConfig); err != nil {
