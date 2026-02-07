@@ -24,9 +24,9 @@ const (
 
 // Default config file names
 const (
-	configFileYAML = "config.yaml"
-	configFileYML  = "config.yml"
-	configFileJSON = "config.json"
+	configFileYAML = "config" + string(extYAML)
+	configFileYML  = "config" + string(extYML)
+	configFileJSON = "config" + string(extJSON)
 )
 
 // Error definitions
