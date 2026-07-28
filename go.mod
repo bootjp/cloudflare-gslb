@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/cloudflare/cloudflare-go/v6 v6.10.0
+	github.com/cloudflare/cloudflare-go/v7 v7.8.0
 	github.com/cockroachdb/errors v1.12.0
 	golang.org/x/net v0.57.0
 	gopkg.in/yaml.v3 v3.0.1
