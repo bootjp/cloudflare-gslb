@@ -1,12 +1,12 @@
 module github.com/bootjp/cloudflare-gslb
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cloudflare/cloudflare-go/v6 v6.10.0
 	github.com/cloudflare/cloudflare-go/v7 v7.8.0
 	github.com/cockroachdb/errors v1.14.0
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.59.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -24,6 +24,6 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )
