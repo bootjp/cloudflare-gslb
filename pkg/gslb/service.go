@@ -279,18 +279,32 @@ func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, c
 	isFailoverIP := selectedPriority < maxPriority
 	reason := buildChangeReason(currentPrioritySet, currentPriority, selectedPriority, currentIPs, selectedIPs)
 
-	if selectedPriority >= currentPriority {
-		failures = nil
-	} else {
-		causes := failures[:0]
-		for _, failure := range failures {
+	failures = failuresForChange(failures, currentIPs, selectedIPs, currentPriority, selectedPriority)
+	s.sendNotifications(origin, currentIPs, selectedIPs, reason, isPriorityIP, isFailoverIP, currentPriority, selectedPriority, maxPriority, failures)
+}
+
+func failuresForChange(failures []notifier.HealthCheckFailure, currentIPs, selectedIPs []string, currentPriority, selectedPriority int) []notifier.HealthCheckFailure {
+	if selectedPriority > currentPriority {
+		return nil
+	}
+
+	currentSet := sliceToSet(currentIPs)
+	selectedSet := sliceToSet(selectedIPs)
+	causes := make([]notifier.HealthCheckFailure, 0, len(failures))
+	for _, failure := range failures {
+		if selectedPriority < currentPriority {
 			if failure.Priority <= currentPriority && failure.Priority > selectedPriority {
 				causes = append(causes, failure)
 			}
+			continue
 		}
-		failures = causes
+		_, wasCurrent := currentSet[failure.IP]
+		_, stillSelected := selectedSet[failure.IP]
+		if failure.Priority == currentPriority && wasCurrent && !stillSelected {
+			causes = append(causes, failure)
+		}
 	}
-	s.sendNotifications(origin, currentIPs, selectedIPs, reason, isPriorityIP, isFailoverIP, currentPriority, selectedPriority, maxPriority, failures)
+	return causes
 }
 
 func (s *Service) getOrInitOriginStatus(originKey string) *OriginStatus {
@@ -314,35 +328,40 @@ func (s *Service) selectPriorityLevel(origin config.OriginConfig, checker health
 			continue
 		}
 
-		failure := s.checkPriorityLevel(origin.RecordType, checker, level)
-		if failure == nil {
-			return level.Priority, level.IPs, failures, true
+		healthyIPs, levelFailures := s.checkPriorityLevel(origin.RecordType, checker, level)
+		failures = append(failures, levelFailures...)
+		if len(healthyIPs) > 0 {
+			return level.Priority, healthyIPs, failures, true
 		}
-		failures = append(failures, *failure)
 	}
 
 	return 0, nil, failures, false
 }
 
-func (s *Service) checkPriorityLevel(recordType string, checker healthcheck.Checker, level config.PriorityLevel) *notifier.HealthCheckFailure {
+func (s *Service) checkPriorityLevel(recordType string, checker healthcheck.Checker, level config.PriorityLevel) ([]string, []notifier.HealthCheckFailure) {
 	log.Printf("Checking priority level %d (%d IPs)", level.Priority, len(level.IPs))
 
 	if len(level.IPs) == 0 {
-		return &notifier.HealthCheckFailure{Priority: level.Priority, Reason: "no IPs configured"}
+		return nil, []notifier.HealthCheckFailure{{Priority: level.Priority, Reason: "no IPs configured"}}
 	}
 
+	var healthyIPs []string
+	var failures []notifier.HealthCheckFailure
 	for _, ip := range level.IPs {
 		if err := s.validateIPType(recordType, ip); err != nil {
 			log.Printf("Invalid IP %s for record type %s: %v", ip, recordType, err)
-			return &notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()}
+			failures = append(failures, notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()})
+			continue
 		}
 		if err := checker.Check(ip); err != nil {
 			log.Printf("IP %s at priority %d is unhealthy: %v", ip, level.Priority, err)
-			return &notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()}
+			failures = append(failures, notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()})
+			continue
 		}
+		healthyIPs = append(healthyIPs, ip)
 	}
 
-	return nil
+	return healthyIPs, failures
 }
 
 func (s *Service) filterValidIPs(recordType string, ips []string) []string {
@@ -480,13 +499,19 @@ func buildChangeReason(currentPrioritySet bool, currentPriority, selectedPriorit
 		return fmt.Sprintf("Switching to priority level %d", selectedPriority)
 	}
 	if selectedPriority > currentPriority {
-		return fmt.Sprintf("Priority level %d is healthy again", selectedPriority)
+		return fmt.Sprintf("Priority level %d has healthy IPs again", selectedPriority)
 	}
 	if selectedPriority < currentPriority {
 		return fmt.Sprintf("Priority level %d unhealthy, switching to level %d", currentPriority, selectedPriority)
 	}
 	if !sameIPSet(currentIPs, selectedIPs) {
-		return fmt.Sprintf("Updating IPs within priority level %d based on health checks", selectedPriority)
+		if len(selectedIPs) < len(currentIPs) {
+			return fmt.Sprintf("Removing unhealthy IPs from priority level %d", selectedPriority)
+		}
+		if len(selectedIPs) > len(currentIPs) {
+			return fmt.Sprintf("Restoring healthy IPs at priority level %d", selectedPriority)
+		}
+		return fmt.Sprintf("Updating healthy IPs within priority level %d", selectedPriority)
 	}
 	return "No change"
 }
@@ -521,23 +546,25 @@ func (s *Service) sendNotifications(origin config.OriginConfig, oldIPs, newIPs [
 	}
 
 	event := notifier.FailoverEvent{
-		OriginName:          origin.Name,
-		ZoneName:            origin.ZoneName,
-		RecordType:          origin.RecordType,
-		OldIP:               firstIP(oldIPs),
-		NewIP:               firstIP(newIPs),
-		OldIPs:              oldIPs,
-		NewIPs:              newIPs,
-		Reason:              reason,
-		HealthCheckFailures: failures,
-		CheckerHostname:     hostname,
-		Timestamp:           time.Now(),
-		IsPriorityIP:        isPriorityIP,
-		IsFailoverIP:        isFailoverIP,
-		ReturnToPriority:    origin.ReturnToPriority,
-		OldPriority:         oldPriority,
-		NewPriority:         newPriority,
-		MaxPriority:         maxPriority,
+		OriginName:             origin.Name,
+		ZoneName:               origin.ZoneName,
+		RecordType:             origin.RecordType,
+		OldIP:                  firstIP(oldIPs),
+		NewIP:                  firstIP(newIPs),
+		OldIPs:                 oldIPs,
+		NewIPs:                 newIPs,
+		Reason:                 reason,
+		HealthCheckFailures:    failures,
+		CheckerHostname:        hostname,
+		Timestamp:              time.Now(),
+		IsPriorityIP:           isPriorityIP,
+		IsFailoverIP:           isFailoverIP,
+		IsSamePriorityFailover: oldPriority == newPriority && len(failures) > 0,
+		IsSamePriorityRecovery: oldPriority == newPriority && len(oldIPs) > 0 && len(newIPs) > len(oldIPs) && len(failures) == 0,
+		ReturnToPriority:       origin.ReturnToPriority,
+		OldPriority:            oldPriority,
+		NewPriority:            newPriority,
+		MaxPriority:            maxPriority,
 	}
 
 	// Create a context with timeout for notifications independent of parent cancellation

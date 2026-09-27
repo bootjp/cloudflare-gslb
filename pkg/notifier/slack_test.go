@@ -62,6 +62,32 @@ func TestSlackNotifier_Notify(t *testing.T) {
 			statusCode:    http.StatusOK,
 		},
 		{
+			name: "same-priority failover is danger",
+			event: FailoverEvent{
+				OriginName: "www", ZoneName: "example.com", RecordType: "A",
+				OldIPs: []string{"192.168.1.1", "192.168.1.2"}, NewIPs: []string{"192.168.1.2"},
+				Reason: "Removing unhealthy IPs from priority level 100", Timestamp: time.Now(),
+				IsSamePriorityFailover: true, IsPriorityIP: true, ReturnToPriority: true,
+			},
+			expectedColor: "danger",
+			expectedOld:   "192.168.1.1\n192.168.1.2",
+			expectedNew:   "192.168.1.2",
+			statusCode:    http.StatusOK,
+		},
+		{
+			name: "same-priority recovery is good",
+			event: FailoverEvent{
+				OriginName: "www", ZoneName: "example.com", RecordType: "A",
+				OldIPs: []string{"192.168.1.2"}, NewIPs: []string{"192.168.1.1", "192.168.1.2"},
+				Reason: "Restoring healthy IPs at priority level 100", Timestamp: time.Now(),
+				IsSamePriorityRecovery: true,
+			},
+			expectedColor: "good",
+			expectedOld:   "192.168.1.2",
+			expectedNew:   "192.168.1.1\n192.168.1.2",
+			statusCode:    http.StatusOK,
+		},
+		{
 			name: "failed notification - bad status code",
 			event: FailoverEvent{
 				OriginName: "www",
@@ -148,6 +174,16 @@ func TestSlackNotifier_GetEventType(t *testing.T) {
 		event    FailoverEvent
 		expected string
 	}{
+		{
+			name:     "same-priority failover",
+			event:    FailoverEvent{IsSamePriorityFailover: true, IsPriorityIP: true, ReturnToPriority: true},
+			expected: "Failover within Priority Level",
+		},
+		{
+			name:     "same-priority recovery",
+			event:    FailoverEvent{IsSamePriorityRecovery: true},
+			expected: "Recovery within Priority Level",
+		},
 		{
 			name: "return to priority",
 			event: FailoverEvent{

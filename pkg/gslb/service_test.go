@@ -264,7 +264,7 @@ func TestServiceCheckOrigin_ReturnToPriorityDisabled(t *testing.T) {
 	}
 }
 
-func TestServiceCheckOrigin_FallbackWhenPriorityLevelPartiallyUnhealthy(t *testing.T) {
+func TestServiceCheckOrigin_KeepsHealthyIPsAtCurrentPriority(t *testing.T) {
 	origin := config.OriginConfig{
 		Name:       "example.com",
 		ZoneName:   "default",
@@ -297,10 +297,19 @@ func TestServiceCheckOrigin_FallbackWhenPriorityLevelPartiallyUnhealthy(t *testi
 		replaced = append([]string{}, newContents...)
 		return nil
 	}
+	events := make(chan notifier.FailoverEvent, 1)
+	service.notifiers = []notifier.Notifier{notifierFunc(func(_ context.Context, event notifier.FailoverEvent) error {
+		events <- event
+		return nil
+	})}
 
+	lowerPriorityChecks := 0
 	checker := hcmock.NewCheckerMock(func(ip string) error {
 		if ip == "192.168.1.1" {
 			return fmt.Errorf("unhealthy")
+		}
+		if ip == "192.168.1.3" {
+			lowerPriorityChecks++
 		}
 		return nil
 	})
@@ -310,8 +319,65 @@ func TestServiceCheckOrigin_FallbackWhenPriorityLevelPartiallyUnhealthy(t *testi
 	if replaceCallCount != 1 {
 		t.Fatalf("ReplaceRecords was called %d times, expected 1", replaceCallCount)
 	}
-	if !sameStringSet(replaced, []string{"192.168.1.3"}) {
-		t.Fatalf("expected fallback IPs, got %v", replaced)
+	if !sameStringSet(replaced, []string{"192.168.1.2"}) {
+		t.Fatalf("expected healthy IP at priority 100, got %v", replaced)
+	}
+	if lowerPriorityChecks != 0 {
+		t.Fatalf("checked lower priority %d times despite healthy IP at priority 100", lowerPriorityChecks)
+	}
+	select {
+	case event := <-events:
+		if !event.IsSamePriorityFailover || event.IsSamePriorityRecovery {
+			t.Errorf("expected same-priority failover event, got %+v", event)
+		}
+		if len(event.HealthCheckFailures) != 1 || event.HealthCheckFailures[0].IP != "192.168.1.1" {
+			t.Errorf("expected failed IP in notification, got %v", event.HealthCheckFailures)
+		}
+		if event.Reason != "Removing unhealthy IPs from priority level 100" {
+			t.Errorf("unexpected notification reason: %q", event.Reason)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for same-priority notification")
+	}
+}
+
+func TestServiceCheckOrigin_RestoresRecoveredIPAtSamePriority(t *testing.T) {
+	origin := config.OriginConfig{
+		Name: "example.com", ZoneName: "default", RecordType: "A",
+		PriorityLevels: []config.PriorityLevel{
+			{Priority: 100, IPs: []string{"192.168.1.1", "192.168.1.2"}},
+			{Priority: 50, IPs: []string{"192.168.1.3"}},
+		},
+		ReturnToPriority: true,
+	}
+	service, dnsClientMock := createTestService(origin)
+	dnsClientMock.GetDNSRecordsFunc = func(context.Context, string, string) ([]dns.RecordResponse, error) {
+		return []dns.RecordResponse{{Content: "192.168.1.2"}}, nil
+	}
+	var replaced []string
+	dnsClientMock.ReplaceRecordsFunc = func(_ context.Context, _, _ string, ips []string) error {
+		replaced = append([]string(nil), ips...)
+		return nil
+	}
+	events := make(chan notifier.FailoverEvent, 1)
+	service.notifiers = []notifier.Notifier{notifierFunc(func(_ context.Context, event notifier.FailoverEvent) error {
+		events <- event
+		return nil
+	})}
+	service.checkOrigin(context.Background(), origin, hcmock.NewCheckerMock(func(string) error { return nil }))
+	if !sameStringSet(replaced, []string{"192.168.1.1", "192.168.1.2"}) {
+		t.Fatalf("expected both recovered priority 100 IPs, got %v", replaced)
+	}
+	select {
+	case event := <-events:
+		if !event.IsSamePriorityRecovery || event.IsSamePriorityFailover {
+			t.Errorf("expected same-priority recovery event, got %+v", event)
+		}
+		if len(event.HealthCheckFailures) != 0 {
+			t.Errorf("unexpected health check failures: %v", event.HealthCheckFailures)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recovery notification")
 	}
 }
 

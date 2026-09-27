@@ -68,6 +68,34 @@ func TestDiscordNotifier_Notify(t *testing.T) {
 			statusCode:    http.StatusOK,
 		},
 		{
+			name: "same-priority failover shows failed IP",
+			event: FailoverEvent{
+				OriginName: "www", ZoneName: "example.com", RecordType: "A",
+				OldIPs: []string{"192.168.1.1", "192.168.1.2"}, NewIPs: []string{"192.168.1.2"},
+				Reason: "Removing unhealthy IPs from priority level 100", Timestamp: time.Now(),
+				IsPriorityIP: true, ReturnToPriority: true, IsSamePriorityFailover: true,
+				HealthCheckFailures: []HealthCheckFailure{{Priority: 100, IP: "192.168.1.1", Reason: "connection refused"}},
+			},
+			expectedColor:   15158332,
+			expectedOld:     "192.168.1.1\n192.168.1.2",
+			expectedNew:     "192.168.1.2",
+			expectedFailure: "Priority 100, 192.168.1.1: connection refused",
+			statusCode:      http.StatusOK,
+		},
+		{
+			name: "same-priority recovery is green",
+			event: FailoverEvent{
+				OriginName: "www", ZoneName: "example.com", RecordType: "A",
+				OldIPs: []string{"192.168.1.2"}, NewIPs: []string{"192.168.1.1", "192.168.1.2"},
+				Reason: "Restoring healthy IPs at priority level 100", Timestamp: time.Now(),
+				IsSamePriorityRecovery: true,
+			},
+			expectedColor: 5763719,
+			expectedOld:   "192.168.1.2",
+			expectedNew:   "192.168.1.1\n192.168.1.2",
+			statusCode:    http.StatusOK,
+		},
+		{
 			name: "successful notification with NoContent status",
 			event: FailoverEvent{
 				OriginName: "www",
@@ -180,6 +208,16 @@ func TestDiscordNotifier_GetEventType(t *testing.T) {
 		event    FailoverEvent
 		expected string
 	}{
+		{
+			name:     "same-priority failover",
+			event:    FailoverEvent{IsSamePriorityFailover: true, IsPriorityIP: true, ReturnToPriority: true},
+			expected: "❌ Failover within Priority Level",
+		},
+		{
+			name:     "same-priority recovery",
+			event:    FailoverEvent{IsSamePriorityRecovery: true},
+			expected: "✅ Recovery within Priority Level",
+		},
 		{
 			name: "return to priority",
 			event: FailoverEvent{

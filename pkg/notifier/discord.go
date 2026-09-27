@@ -54,9 +54,12 @@ type discordFooter struct {
 // Notify sends a notification to Discord
 func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	color := 16776960 // Yellow for warning
-	if event.ReturnToPriority && event.IsPriorityIP {
+	switch {
+	case event.IsSamePriorityFailover:
+		color = 15158332 // Red for danger
+	case event.IsSamePriorityRecovery || event.ReturnToPriority && event.IsPriorityIP:
 		color = 5763719 // Green for success
-	} else if event.IsFailoverIP {
+	case event.IsFailoverIP:
 		color = 15158332 // Red for danger
 	}
 	hostname := event.CheckerHostname
@@ -133,6 +136,10 @@ func formatHealthCheckFailures(failures []HealthCheckFailure) string {
 
 func (d *DiscordNotifier) getEventType(event FailoverEvent) string {
 	switch {
+	case event.IsSamePriorityFailover:
+		return "❌ Failover within Priority Level"
+	case event.IsSamePriorityRecovery:
+		return "✅ Recovery within Priority Level"
 	case event.ReturnToPriority && event.IsPriorityIP:
 		return "✅ Recovery (Return to Priority IP)"
 	case event.IsPriorityIP:

@@ -231,9 +231,9 @@ The generated file will include explicit `priority_levels` with default prioriti
 When `priority_levels` are configured, the system behaves as follows:
 
 1. It selects the highest priority level that has at least one healthy IP
-2. All IPs at the selected priority level are published for DNS round-robin
-3. If any IP in a priority level is unhealthy, the system falls back to the next lower priority level
-4. If `return_to_priority: true`, it will move back to higher priorities once they recover
+2. Only healthy IPs at the selected priority level are published for DNS round-robin
+3. It moves to a lower priority only when no IP at the current priority level is healthy
+4. A recovered IP is added back at the current level; with `return_to_priority: true`, the system also moves back to higher levels once they have a healthy IP
 
 ### Utilizing Priority Levels
 
@@ -335,6 +335,8 @@ Notifications are sent for the following events:
 - **Failover to Backup IP**: When a health check fails and the system switches to a backup IP
 - **Failover to Priority IP**: When switching from a backup IP to a priority IP
 - **Recovery (Return to Priority)**: When a priority IP becomes healthy again and the system returns to it
+- **Failover within a Priority Level**: When one IP fails but another IP at the same priority remains healthy
+- **Recovery within a Priority Level**: When an IP at the current priority level becomes healthy again
 
 Each notification includes:
 - Origin name and zone
@@ -345,7 +347,7 @@ Each notification includes:
 - Reason for the failover
 - Timestamp
 
-Discord notifications also show the hostname of the machine running the health check. On failover to a lower priority, they list the failed priority level, IP address, and check error (including the HTTP status for an unhealthy HTTP response). In a container, the hostname is the container hostname; configure the container hostname if you want the underlying host name to appear.
+Discord notifications also show the hostname of the machine running the health check. On failover, including within the same priority level, they list the failed priority level, IP address, and check error (including the HTTP status for an unhealthy HTTP response). In a container, the hostname is the container hostname; configure the container hostname if you want the underlying host name to appear.
 
 ## Usage
 
