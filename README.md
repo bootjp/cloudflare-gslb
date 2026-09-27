@@ -345,6 +345,8 @@ Each notification includes:
 - Reason for the failover
 - Timestamp
 
+Discord notifications also show the hostname of the machine running the health check. On failover to a lower priority, they list the failed priority level, IP address, and check error (including the HTTP status for an unhealthy HTTP response). In a container, the hostname is the container hostname; configure the container hostname if you want the underlying host name to appear.
+
 ## Usage
 
 The application accepts both JSON and YAML configuration files. The file format is automatically detected based on the file extension (`.json`, `.yaml`, or `.yml`).

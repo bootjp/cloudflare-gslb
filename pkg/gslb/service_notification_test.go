@@ -33,6 +33,7 @@ func TestService_sendNotifications(t *testing.T) {
 		oldPriority      int
 		newPriority      int
 		maxPriority      int
+		failures         []notifier.HealthCheckFailure
 		reason           string
 		isPriorityIP     bool
 		isFailoverIP     bool
@@ -50,6 +51,7 @@ func TestService_sendNotifications(t *testing.T) {
 			oldPriority:      100,
 			newPriority:      50,
 			maxPriority:      100,
+			failures:         []notifier.HealthCheckFailure{{Priority: 100, IP: "192.168.1.1", Reason: "connection refused"}},
 			reason:           "Health check failed",
 			isPriorityIP:     false,
 			isFailoverIP:     true,
@@ -97,6 +99,7 @@ func TestService_sendNotifications(t *testing.T) {
 				tt.oldPriority,
 				tt.newPriority,
 				tt.maxPriority,
+				tt.failures,
 			)
 
 			// Wait a bit for the goroutine to execute
@@ -129,6 +132,12 @@ func TestService_sendNotifications(t *testing.T) {
 				}
 				if mockNotifier.LastEvent.Reason != tt.reason {
 					t.Errorf("Expected reason %s, got %s", tt.reason, mockNotifier.LastEvent.Reason)
+				}
+				if mockNotifier.LastEvent.CheckerHostname == "" {
+					t.Error("Expected checker hostname")
+				}
+				if len(mockNotifier.LastEvent.HealthCheckFailures) != len(tt.failures) {
+					t.Errorf("Expected failures %v, got %v", tt.failures, mockNotifier.LastEvent.HealthCheckFailures)
 				}
 				if mockNotifier.LastEvent.IsPriorityIP != tt.isPriorityIP {
 					t.Errorf("Expected IsPriorityIP %v, got %v", tt.isPriorityIP, mockNotifier.LastEvent.IsPriorityIP)
@@ -171,6 +180,7 @@ func TestService_sendNotifications_noNotifiers(t *testing.T) {
 		100,
 		50,
 		100,
+		nil,
 	)
 
 	// If we got here without panic, the test passes
@@ -204,6 +214,7 @@ func TestService_sendNotifications_multipleNotifiers(t *testing.T) {
 		100,
 		50,
 		100,
+		nil,
 	)
 
 	// Wait for goroutines to execute

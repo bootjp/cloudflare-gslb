@@ -59,6 +59,10 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 	} else if event.IsFailoverIP {
 		color = 15158332 // Red for danger
 	}
+	hostname := event.CheckerHostname
+	if hostname == "" {
+		hostname = "unknown"
+	}
 
 	message := discordMessage{
 		Embeds: []discordEmbed{
@@ -71,6 +75,7 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 					{Name: "Event Type", Value: d.getEventType(event), Inline: true},
 					{Name: "Old IPs", Value: formatDiscordIPList(event.OldIPs, event.OldIP), Inline: true},
 					{Name: "New IPs", Value: formatDiscordIPList(event.NewIPs, event.NewIP), Inline: true},
+					{Name: "Checker Host", Value: hostname, Inline: true},
 				},
 				Footer: &discordFooter{
 					Text: "Cloudflare GSLB",
@@ -78,6 +83,11 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 				Timestamp: event.Timestamp.Format(time.RFC3339),
 			},
 		},
+	}
+	if len(event.HealthCheckFailures) > 0 {
+		message.Embeds[0].Fields = append(message.Embeds[0].Fields, discordField{
+			Name: "Health Check Failures", Value: formatHealthCheckFailures(event.HealthCheckFailures),
+		})
 	}
 
 	payload, err := json.Marshal(message)
@@ -103,6 +113,22 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 	}
 
 	return nil
+}
+
+func formatHealthCheckFailures(failures []HealthCheckFailure) string {
+	lines := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		if failure.IP == "" {
+			lines = append(lines, fmt.Sprintf("Priority %d: %s", failure.Priority, failure.Reason))
+		} else {
+			lines = append(lines, fmt.Sprintf("Priority %d, %s: %s", failure.Priority, failure.IP, failure.Reason))
+		}
+	}
+	value := []rune(strings.Join(lines, "\n"))
+	if len(value) > 1024 {
+		return string(value[:1021]) + "..."
+	}
+	return string(value)
 }
 
 func (d *DiscordNotifier) getEventType(event FailoverEvent) string {

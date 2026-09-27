@@ -3,6 +3,7 @@ package healthcheck
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,9 +98,10 @@ func TestHttpChecker_Check(t *testing.T) {
 	host := server.URL[7:] // "http://" を取り除く
 
 	tests := []struct {
-		name     string
-		endpoint string
-		wantErr  bool
+		name       string
+		endpoint   string
+		wantErr    bool
+		wantStatus string
 	}{
 		{
 			name:     "Success",
@@ -107,14 +109,16 @@ func TestHttpChecker_Check(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "Error Status",
-			endpoint: "/error",
-			wantErr:  true,
+			name:       "Error Status",
+			endpoint:   "/error",
+			wantErr:    true,
+			wantStatus: "500 Internal Server Error",
 		},
 		{
-			name:     "Not Found",
-			endpoint: "/notfound",
-			wantErr:  true,
+			name:       "Not Found",
+			endpoint:   "/notfound",
+			wantErr:    true,
+			wantStatus: "404 Not Found",
 		},
 	}
 
@@ -127,6 +131,8 @@ func TestHttpChecker_Check(t *testing.T) {
 			}
 			if err := h.Check(host); (err != nil) != tt.wantErr {
 				t.Errorf("HttpChecker.Check() error = %v, wantErr %v", err, tt.wantErr)
+			} else if tt.wantStatus != "" && !strings.Contains(err.Error(), tt.wantStatus) {
+				t.Errorf("HttpChecker.Check() error = %q, want status %q", err, tt.wantStatus)
 			}
 		})
 	}

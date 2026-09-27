@@ -3,6 +3,7 @@ package healthcheck
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -111,7 +112,7 @@ func (h *HttpChecker) Check(ip string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return errors.WithStack(ErrUnexpectedStatusCode)
+		return fmt.Errorf("%w: %s", ErrUnexpectedStatusCode, resp.Status)
 	}
 
 	return nil

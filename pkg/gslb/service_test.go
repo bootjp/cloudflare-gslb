@@ -3,6 +3,7 @@ package gslb
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -10,11 +11,18 @@ import (
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
 	cfmock "github.com/bootjp/cloudflare-gslb/pkg/cloudflare/mock"
 	hcmock "github.com/bootjp/cloudflare-gslb/pkg/healthcheck/mock"
+	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
 	"github.com/cloudflare/cloudflare-go/v6/dns"
 )
 
 type MockDNSClient struct {
 	*cfmock.DNSClientMock
+}
+
+type notifierFunc func(context.Context, notifier.FailoverEvent) error
+
+func (f notifierFunc) Notify(ctx context.Context, event notifier.FailoverEvent) error {
+	return f(ctx, event)
 }
 
 func createTestService(origin config.OriginConfig) (*Service, *cfmock.DNSClientMock) {
@@ -149,6 +157,65 @@ func TestServiceCheckOrigin_FallbackToLowerPriority(t *testing.T) {
 	}
 	if !sameStringSet(replaced, []string{"192.168.1.3"}) {
 		t.Fatalf("expected fallback IPs, got %v", replaced)
+	}
+}
+
+func TestServiceCheckOrigin_ReportsFailoverChecksAndHost(t *testing.T) {
+	origin := config.OriginConfig{
+		Name: "www", ZoneName: "default", RecordType: "A", ReturnToPriority: true,
+		PriorityLevels: []config.PriorityLevel{
+			{Priority: 100, IPs: []string{"192.0.2.1"}},
+			{Priority: 50, IPs: []string{"192.0.2.2"}},
+			{Priority: 0, IPs: []string{"192.0.2.3"}},
+		},
+	}
+	service, dnsClientMock := createTestService(origin)
+	dnsClientMock.GetDNSRecordsFunc = func(context.Context, string, string) ([]dns.RecordResponse, error) {
+		return []dns.RecordResponse{{Content: "192.0.2.1"}}, nil
+	}
+	dnsClientMock.ReplaceRecordsFunc = func(context.Context, string, string, []string) error {
+		return nil
+	}
+	events := make(chan notifier.FailoverEvent, 1)
+	service.notifiers = []notifier.Notifier{notifierFunc(func(_ context.Context, event notifier.FailoverEvent) error {
+		events <- event
+		return nil
+	})}
+	checker := hcmock.NewCheckerMock(func(ip string) error {
+		switch ip {
+		case "192.0.2.1":
+			return fmt.Errorf("unexpected status code: 503 Service Unavailable")
+		case "192.0.2.2":
+			return fmt.Errorf("connection refused")
+		default:
+			return nil
+		}
+	})
+
+	service.checkOrigin(context.Background(), origin, checker)
+	select {
+	case event := <-events:
+		hostname, err := os.Hostname()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.CheckerHostname != hostname {
+			t.Errorf("checker hostname = %q, want %q", event.CheckerHostname, hostname)
+		}
+		want := []notifier.HealthCheckFailure{
+			{Priority: 100, IP: "192.0.2.1", Reason: "unexpected status code: 503 Service Unavailable"},
+			{Priority: 50, IP: "192.0.2.2", Reason: "connection refused"},
+		}
+		if len(event.HealthCheckFailures) != len(want) {
+			t.Fatalf("failures = %v, want %v", event.HealthCheckFailures, want)
+		}
+		for i, got := range event.HealthCheckFailures {
+			if got != want[i] {
+				t.Errorf("failure %d = %+v, want %+v", i, got, want[i])
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for failover notification")
 	}
 }
 
