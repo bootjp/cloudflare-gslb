@@ -30,6 +30,14 @@ go build -o gslb ./cmd/gslb
 
 Cloudflare GSLB supports both **JSON** and **YAML** configuration file formats. You can use whichever format you prefer.
 
+The long-running `gslb` command also accepts `GSLB_HEALTH_TIMEOUT_OVERRIDES`
+as a JSON object keyed by origin name, for example
+`{"misskey.bootjp.me":10}`. Each value is a timeout in seconds from 1 to 300.
+This overrides only the named origin's `health_check.timeout` after loading
+the configuration file. Invalid JSON, an unknown origin, or an out-of-range
+value causes startup to fail. This lets a deployment keep non-secret timeout
+policy in Git while loading credentials from a Kubernetes Secret.
+
 ### JSON Configuration
 
 Copy `config.json.example` to create `config.json` and configure the necessary settings.

@@ -21,6 +21,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	if raw := os.Getenv("GSLB_HEALTH_TIMEOUT_OVERRIDES"); raw != "" {
+		if err := cfg.ApplyHealthTimeoutOverrides(raw); err != nil {
+			log.Fatalf("Failed to apply health timeout overrides: %v", err)
+		}
+		log.Print("Applied health check timeout overrides")
+	}
 
 	service, err := gslb.NewService(cfg)
 	if err != nil {
