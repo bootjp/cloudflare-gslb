@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"time"
@@ -92,6 +93,8 @@ func (h *HttpChecker) Check(ip string) error {
 	}
 
 	client := &http.Client{}
+	trace := newProbeTrace()
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace.clientTrace()))
 
 	// HTTPSの場合はTLS設定を追加
 	if h.Scheme == "https" {
@@ -104,15 +107,16 @@ func (h *HttpChecker) Check(ip string) error {
 			},
 		}
 	}
+	defer client.CloseIdleConnections()
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.WithStack(err)
+		return fmt.Errorf("%s: %w", trace.summary(h.Scheme, ""), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return fmt.Errorf("%w: %s", ErrUnexpectedStatusCode, resp.Status)
+		return fmt.Errorf("%w: %s (%s)", ErrUnexpectedStatusCode, resp.Status, trace.summary(h.Scheme, "http_status"))
 	}
 
 	return nil

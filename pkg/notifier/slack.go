@@ -57,13 +57,14 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 		color = "danger"
 	}
 
+	originName := displayOrigin(event.OriginName, event.ZoneName)
 	message := slackMessage{
-		Text: fmt.Sprintf("*DNS Failover Event* - %s.%s", event.OriginName, event.ZoneName),
+		Text: fmt.Sprintf("*DNS Failover Event* - %s", originName),
 		Attachments: []slackAttachment{
 			{
 				Color: color,
 				Fields: []slackField{
-					{Title: "Origin", Value: fmt.Sprintf("%s.%s (%s)", event.OriginName, event.ZoneName, event.RecordType), Short: true},
+					{Title: "Origin", Value: fmt.Sprintf("%s (%s)", originName, event.RecordType), Short: true},
 					{Title: "Old IPs", Value: formatIPList(event.OldIPs, event.OldIP), Short: true},
 					{Title: "New IPs", Value: formatIPList(event.NewIPs, event.NewIP), Short: true},
 					{Title: "Event Type", Value: s.getEventType(event), Short: true},

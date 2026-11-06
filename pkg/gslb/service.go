@@ -328,7 +328,7 @@ func (s *Service) selectPriorityLevel(origin config.OriginConfig, checker health
 			continue
 		}
 
-		healthyIPs, levelFailures := s.checkPriorityLevel(origin.RecordType, checker, level)
+		healthyIPs, levelFailures := s.checkPriorityLevel(origin, checker, level)
 		failures = append(failures, levelFailures...)
 		if len(healthyIPs) > 0 {
 			return level.Priority, healthyIPs, failures, true
@@ -338,8 +338,8 @@ func (s *Service) selectPriorityLevel(origin config.OriginConfig, checker health
 	return 0, nil, failures, false
 }
 
-func (s *Service) checkPriorityLevel(recordType string, checker healthcheck.Checker, level config.PriorityLevel) ([]string, []notifier.HealthCheckFailure) {
-	log.Printf("Checking priority level %d (%d IPs)", level.Priority, len(level.IPs))
+func (s *Service) checkPriorityLevel(origin config.OriginConfig, checker healthcheck.Checker, level config.PriorityLevel) ([]string, []notifier.HealthCheckFailure) {
+	log.Printf("Checking origin %s priority level %d (%d IPs)", origin.Name, level.Priority, len(level.IPs))
 
 	if len(level.IPs) == 0 {
 		return nil, []notifier.HealthCheckFailure{{Priority: level.Priority, Reason: "no IPs configured"}}
@@ -348,15 +348,20 @@ func (s *Service) checkPriorityLevel(recordType string, checker healthcheck.Chec
 	var healthyIPs []string
 	var failures []notifier.HealthCheckFailure
 	for _, ip := range level.IPs {
-		if err := s.validateIPType(recordType, ip); err != nil {
-			log.Printf("Invalid IP %s for record type %s: %v", ip, recordType, err)
+		if err := s.validateIPType(origin.RecordType, ip); err != nil {
+			log.Printf("Invalid IP %s for record type %s: %v", ip, origin.RecordType, err)
 			failures = append(failures, notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()})
 			continue
 		}
+		start := time.Now()
 		if err := checker.Check(ip); err != nil {
-			log.Printf("IP %s at priority %d is unhealthy: %v", ip, level.Priority, err)
+			log.Printf("Health probe failed origin=%s ip=%s priority=%d: %v", origin.Name, ip, level.Priority, err)
 			failures = append(failures, notifier.HealthCheckFailure{Priority: level.Priority, IP: ip, Reason: err.Error()})
 			continue
+		}
+		elapsed := time.Since(start)
+		if timeout := time.Duration(origin.HealthCheck.Timeout) * time.Second; timeout > 0 && elapsed >= timeout*4/5 {
+			log.Printf("Health probe slow origin=%s ip=%s priority=%d elapsed_ms=%d timeout_ms=%d", origin.Name, ip, level.Priority, elapsed.Milliseconds(), timeout.Milliseconds())
 		}
 		healthyIPs = append(healthyIPs, ip)
 	}
@@ -579,8 +584,8 @@ func (s *Service) sendNotifications(origin config.OriginConfig, oldIPs, newIPs [
 			if err := notifier.Notify(notifyCtx, event); err != nil {
 				log.Printf("Failed to send notification: %v", err)
 			} else {
-				log.Printf("Notification sent successfully for %s.%s (%v -> %v)",
-					origin.Name, origin.ZoneName, oldIPs, newIPs)
+				log.Printf("Notification sent successfully for %s (%v -> %v)",
+					origin.Name, oldIPs, newIPs)
 			}
 		}(n)
 	}

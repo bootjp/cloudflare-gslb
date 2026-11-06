@@ -38,6 +38,17 @@ the configuration file. Invalid JSON, an unknown origin, or an out-of-range
 value causes startup to fail. This lets a deployment keep non-secret timeout
 policy in Git while loading credentials from a Kubernetes Secret.
 
+Failed HTTP(S) checks include `phase`, `elapsed_ms`, `connect_ms`, `tls_ms`,
+and `first_byte_ms` in the log and in failover notifications. A value of `-1`
+means that phase did not finish. `connect` identifies TCP connection failures,
+`tls_handshake` identifies TLS failures, and `response_headers` means the
+connection was established but no HTTP response headers arrived before the
+deadline. A successful check that takes at least 80% of its configured timeout
+is logged as `Health probe slow`. These timings describe what the checker saw;
+compare the same UTC instant with the public proxy access log to separate the
+public network path from proxy and upstream delays. Request headers and their
+values are never included in these diagnostics.
+
 ### JSON Configuration
 
 Copy `config.json.example` to create `config.json` and configure the necessary settings.

@@ -1,6 +1,7 @@
 package healthcheck
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,48 @@ import (
 
 	"github.com/bootjp/cloudflare-gslb/config"
 )
+
+func TestHttpCheckerReportsTimeoutPhaseWithoutHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	h := &HttpChecker{
+		Endpoint: "/health",
+		Timeout:  30 * time.Millisecond,
+		Scheme:   "http",
+		Headers:  map[string]string{"X-HEALTHCHECK": "sensitive-value"},
+	}
+	err := h.Check(strings.TrimPrefix(server.URL, "http://"))
+	if err == nil || !strings.Contains(err.Error(), "phase=response_headers") {
+		t.Fatalf("expected response_headers timeout, got %v", err)
+	}
+	for _, field := range []string{"elapsed_ms=", "connect_ms=", "first_byte_ms="} {
+		if !strings.Contains(err.Error(), field) {
+			t.Errorf("missing %s in %q", field, err)
+		}
+	}
+	if strings.Contains(err.Error(), "sensitive-value") {
+		t.Fatal("probe error exposed request header")
+	}
+}
+
+func TestHttpCheckerReportsConnectFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	listener.Close()
+
+	h := &HttpChecker{Endpoint: "/health", Timeout: time.Second, Scheme: "http"}
+	err = h.Check(address)
+	if err == nil || !strings.Contains(err.Error(), "phase=connect") {
+		t.Fatalf("expected connect failure, got %v", err)
+	}
+}
 
 func TestNewChecker(t *testing.T) {
 	tests := []struct {

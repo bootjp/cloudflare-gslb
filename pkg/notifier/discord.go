@@ -67,14 +67,15 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 		hostname = "unknown"
 	}
 
+	originName := displayOrigin(event.OriginName, event.ZoneName)
 	message := discordMessage{
 		Embeds: []discordEmbed{
 			{
-				Title:       fmt.Sprintf("🔄 DNS Failover Event - %s.%s", event.OriginName, event.ZoneName),
+				Title:       fmt.Sprintf("🔄 DNS Failover Event - %s", originName),
 				Description: event.Reason,
 				Color:       color,
 				Fields: []discordField{
-					{Name: "Origin", Value: fmt.Sprintf("%s.%s (%s)", event.OriginName, event.ZoneName, event.RecordType), Inline: true},
+					{Name: "Origin", Value: fmt.Sprintf("%s (%s)", originName, event.RecordType), Inline: true},
 					{Name: "Event Type", Value: d.getEventType(event), Inline: true},
 					{Name: "Old IPs", Value: formatDiscordIPList(event.OldIPs, event.OldIP), Inline: true},
 					{Name: "New IPs", Value: formatDiscordIPList(event.NewIPs, event.NewIP), Inline: true},
