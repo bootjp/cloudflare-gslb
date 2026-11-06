@@ -92,31 +92,42 @@ func (h *HttpChecker) Check(ip string) error {
 		req.Header.Set(key, value)
 	}
 
-	client := &http.Client{}
+	transport := &http.Transport{}
+	client := &http.Client{Transport: transport}
 	trace := newProbeTrace()
+	probeScheme := h.Scheme
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace.clientTrace()))
+	// A redirect is a new request. Keep its timing separate from the response
+	// that caused the redirect, while preserving the original timeout.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		trace = newProbeTrace()
+		probeScheme = req.URL.Scheme
+		*req = *req.WithContext(httptrace.WithClientTrace(ctx, trace.clientTrace()))
+		return nil
+	}
 
 	// HTTPSの場合はTLS設定を追加
 	if h.Scheme == "https" {
 		// #nosec G402 - InsecureSkipVerifyはユーザー設定に基づいて必要に応じて有効化される
 		// このオプションは自己署名証明書を使用する環境でのヘルスチェックを可能にするために提供されている
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: h.InsecureSkipVerify,
-				ServerName:         h.Host, // proper SNI for certificate validation
-			},
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: h.InsecureSkipVerify,
+			ServerName:         h.Host, // proper SNI for certificate validation
 		}
 	}
 	defer client.CloseIdleConnections()
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", trace.summary(h.Scheme, ""), err)
+		return fmt.Errorf("%s: %w", trace.summary(probeScheme, ""), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return fmt.Errorf("%w: %s (%s)", ErrUnexpectedStatusCode, resp.Status, trace.summary(h.Scheme, "http_status"))
+		return fmt.Errorf("%w: %s (%s)", ErrUnexpectedStatusCode, resp.Status, trace.summary(probeScheme, "http_status"))
 	}
 
 	return nil

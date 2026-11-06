@@ -1,6 +1,7 @@
 package healthcheck
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,59 @@ import (
 
 	"github.com/bootjp/cloudflare-gslb/config"
 )
+
+type rejectingDefaultTransport struct {
+	closed int
+}
+
+func (t *rejectingDefaultTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("probe used the process-wide default transport")
+}
+
+func (t *rejectingDefaultTransport) CloseIdleConnections() {
+	t.closed++
+}
+
+func TestHttpCheckerDoesNotUseOrCloseDefaultTransport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	defaultTransport := http.DefaultTransport
+	guard := &rejectingDefaultTransport{}
+	http.DefaultTransport = guard
+	defer func() { http.DefaultTransport = defaultTransport }()
+
+	h := &HttpChecker{Endpoint: "/health", Timeout: time.Second, Scheme: "http"}
+	if err := h.Check(strings.TrimPrefix(server.URL, "http://")); err != nil {
+		t.Fatal(err)
+	}
+	if guard.closed != 0 {
+		t.Fatalf("probe closed the process-wide default transport %d times", guard.closed)
+	}
+}
+
+func TestHttpCheckerReportsRedirectTargetTimeoutPhase(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, "/slow", http.StatusFound)
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	h := &HttpChecker{Endpoint: "/health", Timeout: 30 * time.Millisecond, Scheme: "http"}
+	err := h.Check(strings.TrimPrefix(server.URL, "http://"))
+	if err == nil || !strings.Contains(err.Error(), "phase=response_headers") {
+		t.Fatalf("expected redirect target's response_headers timeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "first_byte_ms=-1") {
+		t.Fatalf("expected no first response byte from redirect target, got %v", err)
+	}
+}
 
 func TestHttpCheckerReportsTimeoutPhaseWithoutHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
