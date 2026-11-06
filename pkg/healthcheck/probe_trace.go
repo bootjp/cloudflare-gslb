@@ -69,9 +69,9 @@ func (p *probeTrace) summary(scheme, resultPhase string) string {
 
 	phase := "request_setup"
 	switch {
-	case p.connectFailed || (!p.connectStarted.IsZero() && p.connected.IsZero()):
+	case p.connectFailed || p.connectPending():
 		phase = "connect"
-	case scheme == "https" && (p.tlsFailed || (!p.tlsStarted.IsZero() && p.tlsDone.IsZero())):
+	case scheme == schemeHTTPS && (p.tlsFailed || p.tlsPending()):
 		phase = "tls_handshake"
 	case !p.gotConn.IsZero() && p.firstByte.IsZero():
 		phase = "response_headers"
@@ -89,6 +89,14 @@ func (p *probeTrace) summary(scheme, resultPhase string) string {
 		elapsedMillis(p.tlsStarted, p.tlsDone),
 		elapsedMillis(p.started, p.firstByte),
 	)
+}
+
+func (p *probeTrace) connectPending() bool {
+	return !p.connectStarted.IsZero() && p.connected.IsZero()
+}
+
+func (p *probeTrace) tlsPending() bool {
+	return !p.tlsStarted.IsZero() && p.tlsDone.IsZero()
 }
 
 func elapsedMillis(start, end time.Time) int64 {

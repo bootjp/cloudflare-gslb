@@ -20,19 +20,16 @@ func (c *Config) ApplyHealthTimeoutOverrides(raw string) error {
 	if overrides == nil {
 		return fmt.Errorf("health timeout overrides must be a JSON object")
 	}
+	knownOrigins := make(map[string]struct{}, len(c.Origins))
+	for _, origin := range c.Origins {
+		knownOrigins[origin.Name] = struct{}{}
+	}
 
 	for name, timeout := range overrides {
-		if timeout < 1 || timeout > 300 {
+		if !validHealthTimeout(timeout) {
 			return fmt.Errorf("health timeout for %q must be between 1 and 300 seconds", name)
 		}
-		found := false
-		for _, origin := range c.Origins {
-			if origin.Name == name {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if _, ok := knownOrigins[name]; !ok {
 			return fmt.Errorf("health timeout override refers to unknown origin %q", name)
 		}
 	}
@@ -43,4 +40,8 @@ func (c *Config) ApplyHealthTimeoutOverrides(raw string) error {
 		}
 	}
 	return nil
+}
+
+func validHealthTimeout(timeout int) bool {
+	return timeout >= 1 && timeout <= 300
 }

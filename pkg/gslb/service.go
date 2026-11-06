@@ -408,15 +408,6 @@ func sortPriorityLevels(levels []config.PriorityLevel) []config.PriorityLevel {
 	return sorted
 }
 
-func findPriorityLevel(levels []config.PriorityLevel, priority int) (config.PriorityLevel, bool) {
-	for _, level := range levels {
-		if level.Priority == priority {
-			return level, true
-		}
-	}
-	return config.PriorityLevel{}, false
-}
-
 func detectCurrentPriority(levels []config.PriorityLevel, currentIPs []string) (int, bool) {
 	if len(levels) == 0 || len(currentIPs) == 0 {
 		return 0, false

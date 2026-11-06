@@ -28,6 +28,8 @@ var (
 	ErrUnexpectedICMPType     = errors.New("unexpected ICMP message type")
 )
 
+const schemeHTTPS = "https"
+
 func NewChecker(hc config.HealthCheck) (Checker, error) {
 	switch hc.Type {
 	case "http":
@@ -38,12 +40,12 @@ func NewChecker(hc config.HealthCheck) (Checker, error) {
 			Scheme:   "http",
 			Headers:  hc.Headers,
 		}, nil
-	case "https":
+	case schemeHTTPS:
 		return &HttpChecker{
 			Endpoint:           hc.Endpoint,
 			Host:               hc.Host,
 			Timeout:            time.Duration(hc.Timeout) * time.Second,
-			Scheme:             "https",
+			Scheme:             schemeHTTPS,
 			InsecureSkipVerify: hc.InsecureSkipVerify,
 			Headers:            hc.Headers,
 		}, nil
@@ -85,12 +87,7 @@ func (h *HttpChecker) Check(ip string) error {
 		req.Host = h.Host
 	}
 
-	for key, value := range h.Headers {
-		if key == "" {
-			continue
-		}
-		req.Header.Set(key, value)
-	}
+	setProbeHeaders(req, h.Headers)
 
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
 	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
@@ -113,7 +110,7 @@ func (h *HttpChecker) Check(ip string) error {
 	}
 
 	// HTTPSの場合はTLS設定を追加
-	if h.Scheme == "https" {
+	if h.Scheme == schemeHTTPS {
 		// #nosec G402 - InsecureSkipVerifyはユーザー設定に基づいて必要に応じて有効化される
 		// このオプションは自己署名証明書を使用する環境でのヘルスチェックを可能にするために提供されている
 		transport.TLSClientConfig = &tls.Config{
@@ -134,6 +131,14 @@ func (h *HttpChecker) Check(ip string) error {
 	}
 
 	return nil
+}
+
+func setProbeHeaders(req *http.Request, headers map[string]string) {
+	for key, value := range headers {
+		if key != "" {
+			req.Header.Set(key, value)
+		}
+	}
 }
 
 type IcmpChecker struct {
