@@ -92,7 +92,10 @@ func (h *HttpChecker) Check(ip string) error {
 		req.Header.Set(key, value)
 	}
 
-	transport := &http.Transport{}
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = defaultTransport.Clone()
+	}
 	client := &http.Client{Transport: transport}
 	trace := newProbeTrace()
 	probeScheme := h.Scheme
