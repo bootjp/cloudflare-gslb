@@ -28,6 +28,8 @@ var (
 	ErrUnexpectedICMPType     = errors.New("unexpected ICMP message type")
 )
 
+const schemeHTTPS = "https"
+
 func NewChecker(hc config.HealthCheck) (Checker, error) {
 	switch hc.Type {
 	case "http":
@@ -38,12 +40,12 @@ func NewChecker(hc config.HealthCheck) (Checker, error) {
 			Scheme:   "http",
 			Headers:  hc.Headers,
 		}, nil
-	case "https":
+	case schemeHTTPS:
 		return &HttpChecker{
 			Endpoint:           hc.Endpoint,
 			Host:               hc.Host,
 			Timeout:            time.Duration(hc.Timeout) * time.Second,
-			Scheme:             "https",
+			Scheme:             schemeHTTPS,
 			InsecureSkipVerify: hc.InsecureSkipVerify,
 			Headers:            hc.Headers,
 		}, nil
@@ -85,41 +87,58 @@ func (h *HttpChecker) Check(ip string) error {
 		req.Host = h.Host
 	}
 
-	for key, value := range h.Headers {
-		if key == "" {
-			continue
+	setProbeHeaders(req, h.Headers)
+
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = defaultTransport.Clone()
+	}
+	client := &http.Client{Transport: transport}
+	trace := newProbeTrace()
+	probeScheme := h.Scheme
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace.clientTrace()))
+	// A redirect is a new request. Keep its timing separate from the response
+	// that caused the redirect, while preserving the original timeout.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
 		}
-		req.Header.Set(key, value)
+		trace = newProbeTrace()
+		probeScheme = req.URL.Scheme
+		*req = *req.WithContext(httptrace.WithClientTrace(ctx, trace.clientTrace()))
+		return nil
 	}
 
-	client := &http.Client{}
-	trace := newProbeTrace()
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace.clientTrace()))
-
 	// HTTPSの場合はTLS設定を追加
-	if h.Scheme == "https" {
+	if h.Scheme == schemeHTTPS {
 		// #nosec G402 - InsecureSkipVerifyはユーザー設定に基づいて必要に応じて有効化される
 		// このオプションは自己署名証明書を使用する環境でのヘルスチェックを可能にするために提供されている
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: h.InsecureSkipVerify,
-				ServerName:         h.Host, // proper SNI for certificate validation
-			},
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: h.InsecureSkipVerify,
+			ServerName:         h.Host, // proper SNI for certificate validation
 		}
 	}
 	defer client.CloseIdleConnections()
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", trace.summary(h.Scheme, ""), err)
+		return fmt.Errorf("%s: %w", trace.summary(probeScheme, ""), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return fmt.Errorf("%w: %s (%s)", ErrUnexpectedStatusCode, resp.Status, trace.summary(h.Scheme, "http_status"))
+		return fmt.Errorf("%w: %s (%s)", ErrUnexpectedStatusCode, resp.Status, trace.summary(probeScheme, "http_status"))
 	}
 
 	return nil
+}
+
+func setProbeHeaders(req *http.Request, headers map[string]string) {
+	for key, value := range headers {
+		if key != "" {
+			req.Header.Set(key, value)
+		}
+	}
 }
 
 type IcmpChecker struct {

@@ -14,6 +14,7 @@ type probeTrace struct {
 	started        time.Time
 	connectStarted time.Time
 	connected      time.Time
+	gotConn        time.Time
 	tlsStarted     time.Time
 	tlsDone        time.Time
 	firstByte      time.Time
@@ -36,6 +37,11 @@ func (p *probeTrace) clientTrace() *httptrace.ClientTrace {
 			p.mu.Lock()
 			p.connected = time.Now()
 			p.connectFailed = err != nil
+			p.mu.Unlock()
+		},
+		GotConn: func(_ httptrace.GotConnInfo) {
+			p.mu.Lock()
+			p.gotConn = time.Now()
 			p.mu.Unlock()
 		},
 		TLSHandshakeStart: func() {
@@ -63,14 +69,13 @@ func (p *probeTrace) summary(scheme, resultPhase string) string {
 
 	phase := "request_setup"
 	switch {
-	case p.connectStarted.IsZero():
-	case p.connectFailed || p.connected.IsZero():
+	case p.connectFailed || p.connectPending():
 		phase = "connect"
-	case scheme == "https" && (p.tlsFailed || p.tlsDone.IsZero()):
+	case scheme == schemeHTTPS && (p.tlsFailed || p.tlsPending()):
 		phase = "tls_handshake"
-	case p.firstByte.IsZero():
+	case !p.gotConn.IsZero() && p.firstByte.IsZero():
 		phase = "response_headers"
-	default:
+	case !p.firstByte.IsZero():
 		phase = "response_body"
 	}
 	if resultPhase != "" {
@@ -84,6 +89,14 @@ func (p *probeTrace) summary(scheme, resultPhase string) string {
 		elapsedMillis(p.tlsStarted, p.tlsDone),
 		elapsedMillis(p.started, p.firstByte),
 	)
+}
+
+func (p *probeTrace) connectPending() bool {
+	return !p.connectStarted.IsZero() && p.connected.IsZero()
+}
+
+func (p *probeTrace) tlsPending() bool {
+	return !p.tlsStarted.IsZero() && p.tlsDone.IsZero()
 }
 
 func elapsedMillis(start, end time.Time) int64 {
