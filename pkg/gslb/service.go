@@ -210,6 +210,16 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 }
 
 func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
+	if origin.RecordType == "CNAME" {
+		if err := s.checkTunnelOrigin(ctx, origin, checker); err != nil {
+			log.Printf("Tunnel check failed for %s: %v", origin.Name, err)
+		}
+		return
+	}
+	s.checkIPOrigin(ctx, origin, checker)
+}
+
+func (s *Service) checkIPOrigin(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
 	s.checkMutex.Lock()
 	defer s.checkMutex.Unlock()
 
@@ -268,8 +278,7 @@ func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, c
 		return
 	}
 
-	if err := dnsClient.ReplaceRecords(ctx, origin.Name, origin.RecordType, selectedIPs); err != nil {
-		log.Printf("Failed to update DNS records for %s: %v", origin.Name, err)
+	if !s.writeIPRecords(ctx, origin, dnsClient, selectedIPs) {
 		return
 	}
 
@@ -601,6 +610,9 @@ func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig
 	if err != nil {
 		return fmt.Errorf("failed to create health checker for %s: %w", origin.Name, err)
 	}
+	if origin.RecordType == "CNAME" {
+		return s.checkTunnelOrigin(ctx, origin, checker)
+	}
 	s.checkOrigin(ctx, origin, checker)
 	return nil
 }
@@ -635,4 +647,16 @@ func (s *Service) RunOneShot(ctx context.Context) error {
 
 	log.Println("One-shot health check completed")
 	return nil
+}
+
+func (s *Service) writeIPRecords(ctx context.Context, origin config.OriginConfig, client cloudflare.DNSClientInterface, values []string) bool {
+	if s.config.DryRun {
+		log.Printf("Dry run: would update %s (%s) to %v", origin.Name, origin.RecordType, values)
+		return false
+	}
+	if err := client.ReplaceRecords(ctx, origin.Name, origin.RecordType, values); err != nil {
+		log.Printf("Failed to update DNS records for %s: %v", origin.Name, err)
+		return false
+	}
+	return true
 }

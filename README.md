@@ -18,6 +18,13 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - **Configuration migration tool** - Convert legacy configs to the new priority-based format
 - **Failover notifications** - Send notifications to Slack and Discord webhooks when failover events occur
 
+## Cloudflare Tunnel priority groups
+
+[Shared Tunnel tiers](docs/tunnel-groups.md) support proxied CNAME failover with
+multiple replicas per priority group and an application health gate for each
+replica. See `config.tunnels.json.example` and the `cmd/tunnel-replica` binary.
+The default IP-based A/AAAA mode remains available.
+
 ## Installation
 
 ```bash

@@ -1,0 +1,11 @@
+{
+  "probe_url": "http://127.0.0.1:8080/healthz",
+  "host": "app.example.com",
+  "timeout_seconds": 2,
+  "interval_seconds": 2,
+  "fall": 2,
+  "rise": 2,
+  "cloudflared_path": "/usr/bin/cloudflared",
+  "token_file": "/etc/cloudflared-replicas/app-primary.token",
+  "metrics_address": "127.0.0.1:20241"
+}

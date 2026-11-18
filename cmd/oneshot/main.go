@@ -11,6 +11,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.json", "Path to configuration file")
+	dryRun := flag.Bool("dry-run", false, "Probe without updating DNS or sending failover notifications")
 	flag.Parse()
 
 	cfg, err := config.LoadConfig(*configPath)
@@ -18,6 +19,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	cfg.DryRun = cfg.DryRun || *dryRun
 	service, err := gslb.NewService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create GSLB service: %v", err)

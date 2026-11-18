@@ -1,0 +1,24 @@
+[Unit]
+Description=Health-gated Tunnel replica for %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=cloudflared
+Group=cloudflared
+ExecStart=/usr/local/bin/tunnel-replica -config /etc/cloudflared-replicas/%i.json
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=12s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
