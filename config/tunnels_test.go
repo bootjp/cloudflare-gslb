@@ -57,3 +57,26 @@ func TestRejectUnsafeTunnelConfigs(t *testing.T) {
 		})
 	}
 }
+
+func TestTunnelProbeIDNAIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin, probe string
+		wantErr             bool
+	}{
+		{"Unicode probe aliases ASCII origin", "xn--bcher-kva.example.com", "https://bücher.example.com/healthz", true},
+		{"ASCII probe aliases Unicode origin", "bücher.example.com", "https://xn--bcher-kva.example.com/healthz", true},
+		{"case and trailing dot", "XN--BCHER-KVA.EXAMPLE.COM.", "https://BÜCHER.example.com/healthz", true},
+		{"mapped DNS separator", "app.example.com", "https://app。example.com/healthz", true},
+		{"invalid probe IDNA", "app.example.com", "https://foo\u200d.example.com/healthz", true},
+		{"invalid origin IDNA", "foo\u200d.example.com", "https://probe.example.com/healthz", true},
+		{"different Unicode probe", "xn--bcher-kva.example.com", "https://probe.bücher.example.com/healthz", false},
+		{"different ASCII probe", "bücher.example.com", "https://probe.example.com/healthz", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTunnelProbe(tc.origin, TunnelGroup{Name: "primary", ProbeURL: tc.probe})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("validateTunnelProbe() error=%v wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}

@@ -20,6 +20,8 @@ configuration. `dry_run` applies to every origin, including A/AAAA.
 Each group has a fixed HTTPS published probe hostname pointing to its UUID. The
 main public hostname is not a group probe, and the UUID hostname is not a public
 HTTPS probe URL. TLS verification and status 200 are required; redirects fail.
+Probe and application hostnames are compared in IDNA ASCII form, so Unicode and
+punycode spellings cannot bypass the fixed-probe requirement.
 Disable caching on the published probe paths. Allow only the exact health path on
 each probe hostname and end the ingress configuration with `http_status:404`.
 Rewrite the probe Host to the canonical application host inside cloudflared.
@@ -86,6 +88,12 @@ Dry run reads DNS and probes the groups without creating records or sending
 failover notifications. An absent CNAME is allowed only in dry run. Normal
 operation requires one pre-created, proxied CNAME pointing to a configured UUID.
 An unknown target, unexpected proxy state, or multiple records stops writes.
+After probing, GSLB re-reads the CNAME and compares its record ID, target, and proxy
+state with the initial snapshot. A change or failed re-read stops the update.
+The update uses the original record ID, so it cannot create or overwrite a
+replacement record after deletion. This is not an atomic compare-and-swap:
+a concurrent edit to the same record between the final check and update can
+still race with GSLB.
 
 Back up every original DNS record and all GSLB/proxy settings. Stop the old writer
 for each migrated hostname before changing record type. A/AAAA to CNAME is an
@@ -102,6 +110,13 @@ replicas work. Test app failure with cloudflared initially still connected, gate
 disconnection, recovery, total primary-tier failure, backup readiness, and failback. Keep
 the old ingress/firewall path until those checks pass.
 
-For rollback, stop the new writer first, restore closed firewall paths, restore
-all original A/AAAA records, then re-enable the old writer. Existing non-migrated
-origins remain managed by the original deployment throughout.
+For rollback:
+
+1. Stop the new writer for the hostname and restore any closed firewall paths.
+2. Remove the migrated Tunnel CNAME, or replace its record type with an original
+   A/AAAA record. A CNAME cannot coexist with A/AAAA records at the same hostname.
+3. Restore all original A/AAAA records, including their targets, TTLs, and proxy
+   settings, and read them back to verify the restored state.
+4. Re-enable the old writer only after that verification succeeds.
+
+Existing non-migrated origins remain managed by the original deployment throughout.

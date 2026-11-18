@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // TunnelGroup is one priority tier. All healthy replicas in this tier share a UUID.
@@ -66,8 +68,20 @@ func validateTunnelProbe(originName string, group TunnelGroup) error {
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return fmt.Errorf("tunnel group %s requires an HTTPS probe URL without credentials, query or fragment", group.Name)
 	}
-	if CanonicalDNSName(u.Hostname()) == CanonicalDNSName(originName) || strings.HasSuffix(CanonicalDNSName(u.Hostname()), ".cfargotunnel.com") {
-		return fmt.Errorf("tunnel group %s must probe a fixed published hostname, not the selected public name or tunnel UUID", group.Name)
+	return validateTunnelProbeNames(originName, u.Hostname(), group.Name)
+}
+
+func validateTunnelProbeNames(originName, hostname, groupName string) error {
+	probeName, err := canonicalProbeDNSName(hostname)
+	if err != nil {
+		return fmt.Errorf("tunnel group %s has an invalid probe hostname: %w", groupName, err)
+	}
+	publicName, err := canonicalProbeDNSName(originName)
+	if err != nil {
+		return fmt.Errorf("invalid origin hostname: %w", err)
+	}
+	if probeName == publicName || strings.HasSuffix(probeName, ".cfargotunnel.com") {
+		return fmt.Errorf("tunnel group %s must probe a fixed published hostname, not the selected public name or tunnel UUID", groupName)
 	}
 	return nil
 }
@@ -75,4 +89,12 @@ func validateTunnelProbe(originName string, group TunnelGroup) error {
 func validTunnelIdentity(group TunnelGroup, names, targets map[string]bool, priorities map[int]bool) bool {
 	target := CanonicalDNSName(group.Target)
 	return group.Name != "" && !names[group.Name] && !targets[target] && !priorities[group.Priority] && tunnelName.MatchString(target)
+}
+
+func canonicalProbeDNSName(name string) (string, error) {
+	ascii, err := idna.Lookup.ToASCII(name)
+	if err != nil {
+		return "", err
+	}
+	return CanonicalDNSName(ascii), nil
 }

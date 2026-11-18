@@ -40,7 +40,10 @@ func (s *Service) checkTunnelOrigin(ctx context.Context, origin config.OriginCon
 		log.Printf("Dry run: would select Tunnel group %s priority=%d for %s", selected.Name, selected.Priority, origin.Name)
 		return nil
 	}
-	if err := client.ReplaceRecords(ctx, origin.Name, "CNAME", []string{target}); err != nil {
+	if err := confirmTunnelState(ctx, client, origin, state); err != nil {
+		return err
+	}
+	if _, err := client.UpdateDNSRecord(ctx, state.recordID, origin.Name, "CNAME", target); err != nil {
 		return fmt.Errorf("update Tunnel CNAME: %w", err)
 	}
 	if err := confirmTunnelCNAME(ctx, client, origin, target); err != nil {
@@ -78,6 +81,8 @@ func selectTunnelGroup(ctx context.Context, origin config.OriginConfig, checker 
 }
 
 type tunnelState struct {
+	recordID string
+	proxied  bool
 	target   string
 	priority int
 	set      bool
@@ -100,7 +105,7 @@ func (s *Service) readTunnelState(ctx context.Context, origin config.OriginConfi
 	}
 	for _, group := range groups {
 		if config.CanonicalDNSName(group.Target) == current {
-			return tunnelState{target: current, priority: group.Priority, set: true}, nil
+			return tunnelState{recordID: records[0].ID, proxied: records[0].Proxied, target: current, priority: group.Priority, set: true}, nil
 		}
 	}
 	return tunnelState{}, fmt.Errorf("CNAME ownership drift; refusing DNS changes")
@@ -113,6 +118,19 @@ func confirmTunnelCNAME(ctx context.Context, client cloudflare.DNSClientInterfac
 	}
 	if len(confirmed) != 1 || config.CanonicalDNSName(confirmed[0].Content) != target || confirmed[0].Proxied != origin.Proxied {
 		return fmt.Errorf("tunnel CNAME read-back mismatch")
+	}
+	return nil
+}
+
+// Recheck the snapshot after probes, then update only the original record ID.
+// This is a drift guard, not an atomic compare-and-swap with the DNS provider.
+func confirmTunnelState(ctx context.Context, client cloudflare.DNSClientInterface, origin config.OriginConfig, before tunnelState) error {
+	records, err := client.GetDNSRecords(ctx, origin.Name, "CNAME")
+	if err != nil {
+		return fmt.Errorf("recheck Tunnel CNAME before update: %w", err)
+	}
+	if len(records) != 1 || records[0].ID != before.recordID || config.CanonicalDNSName(records[0].Content) != before.target || records[0].Proxied != before.proxied {
+		return fmt.Errorf("CNAME changed during group probes; refusing DNS changes")
 	}
 	return nil
 }
