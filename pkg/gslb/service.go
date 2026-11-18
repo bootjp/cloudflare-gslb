@@ -211,8 +211,8 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 
 func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
 	if origin.RecordType == "CNAME" {
-		if err := s.checkTunnelOrigin(ctx, origin, checker); err != nil {
-			log.Printf("Tunnel check failed for %s: %v", origin.Name, err)
+		if err := s.checkCNAMEOrigin(ctx, origin, checker); err != nil {
+			log.Printf("CNAME check failed for %s: %v", origin.Name, err)
 		}
 		return
 	}
@@ -611,7 +611,7 @@ func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig
 		return fmt.Errorf("failed to create health checker for %s: %w", origin.Name, err)
 	}
 	if origin.RecordType == "CNAME" {
-		return s.checkTunnelOrigin(ctx, origin, checker)
+		return s.checkCNAMEOrigin(ctx, origin, checker)
 	}
 	s.checkOrigin(ctx, origin, checker)
 	return nil

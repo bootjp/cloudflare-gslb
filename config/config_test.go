@@ -463,7 +463,7 @@ func TestLoadConfig_InvalidRecordType(t *testing.T) {
 		"origins": [
 			{
 				"name": "example.com",
-				"record_type": "CNAME",
+				"record_type": "TXT",
 				"priority_failover_ips": ["192.168.1.1"]
 			}
 		]

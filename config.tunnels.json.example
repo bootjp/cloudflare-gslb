@@ -19,7 +19,7 @@
         "type": "url",
         "timeout": 5
       },
-      "tunnel_groups": [
+      "cname_targets": [
         {
           "name": "primary",
           "priority": 100,

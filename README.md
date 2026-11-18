@@ -18,12 +18,17 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 - **Configuration migration tool** - Convert legacy configs to the new priority-based format
 - **Failover notifications** - Send notifications to Slack and Discord webhooks when failover events occur
 
-## Cloudflare Tunnel priority groups
+## CNAME priority failover
 
-[Shared Tunnel tiers](docs/tunnel-groups.md) support proxied CNAME failover with
-multiple replicas per priority group and an application health gate for each
-replica. See `config.tunnels.json.example` and the `cmd/tunnel-replica` binary.
-The default IP-based A/AAAA mode remains available.
+[CNAME failover](docs/cname-failover.md) selects a healthy DNS destination by
+priority and updates an existing CNAME. Destinations can be ordinary hostnames,
+provider aliases, or Cloudflare Tunnel UUID hostnames. Both DNS-only and proxied
+records are supported. Start with `config.cname.json.example`.
+
+The optional [Tunnel replica supervisor](docs/tunnel-replica.md) independently
+starts and stops `cloudflared` based on local application readiness. It is separate
+from DNS selection. See [shared Tunnel example](docs/tunnel-groups.md) for one use
+of the generic CNAME feature. Existing A/AAAA origins remain supported.
 
 ## Installation
 
@@ -204,16 +209,17 @@ Example configuration file:
   - `type`: Notification type (`slack` or `discord`)
   - `webhook_url`: Webhook URL for the notification service
 - `origins`: Array of origin configurations
-  - `name`: DNS record name (without the zone part)
+  - `name`: Fully qualified DNS record name (for example, `app.example.com`)
   - `zone_name`: The name of the zone this record belongs to (must match one of the names in `cloudflare_zones`)
-  - `record_type`: DNS record type (`A` or `AAAA`). `CNAME` などはサポートしません
+  - `record_type`: DNS record type (`A`, `AAAA`, or `CNAME`). CNAME origins use `cname_targets`
   - `health_check`: Health check configuration
-    - `type`: Health check type (`http`, `https`, or `icmp`)
+    - `type`: Health check type (`http`, `https`, `icmp`, or `url` for CNAME probes)
     - `endpoint`: HTTP/HTTPS endpoint path
     - `host`: HTTP/HTTPS host header
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
+  - `cname_targets`: CNAME candidates, each with a unique `name`, `priority`, DNS `target`, and fixed HTTPS `probe_url` (see [CNAME configuration](docs/cname-failover.md))
   - `priority_levels`: Priority-based IP groups (higher `priority` values are preferred)
     - `priority`: Priority value (higher = higher priority)
     - `ips`: List of IPs for DNS round-robin at that priority level

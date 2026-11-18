@@ -10,7 +10,7 @@ import (
 	"github.com/cloudflare/cloudflare-go/v6/dns"
 )
 
-func TestTunnelTierFailoverAndReadBack(t *testing.T) {
+func TestCNAMEPriorityFailoverAndReadBack(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		current          int
@@ -34,62 +34,64 @@ func TestTunnelTierFailoverAndReadBack(t *testing.T) {
 		{name: "manual drift", drift: true, want: -1, wantErr: true},
 		{name: "readback mismatch", current: 0, failed: map[string]bool{"primary": true}, returnToPriority: true, mismatch: true, want: 1, wantErr: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			groups := []config.TunnelGroup{{Name: "primary", Priority: 100, Target: "11111111-1111-1111-1111-111111111111.cfargotunnel.com", ProbeURL: "https://primary-probe.example.com/healthz"}, {Name: "backup", Priority: 0, Target: "22222222-2222-2222-2222-222222222222.cfargotunnel.com", ProbeURL: "https://backup-probe.example.com/healthz"}}
-			o := config.OriginConfig{Name: "app.example.com", ZoneName: "default", RecordType: "CNAME", Proxied: true, ReturnToPriority: tc.returnToPriority, TunnelGroups: groups}
-			s, m := createTestService(o)
-			s.config.DryRun = tc.dryRun
-			current := groups[tc.current].Target
-			if tc.drift {
-				current = "unknown.example.com"
-			}
-			m.GetDNSRecordsFunc = func(context.Context, string, string) ([]dns.RecordResponse, error) {
-				if tc.missing {
-					return nil, nil
+		for _, proxied := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/proxied=%t", tc.name, proxied), func(t *testing.T) {
+				candidates := []config.CNAMETarget{{Name: "primary", Priority: 100, Target: "primary.example.net", ProbeURL: "https://primary-probe.example.com/healthz"}, {Name: "backup", Priority: 0, Target: "backup.example.net", ProbeURL: "https://backup-probe.example.com/healthz"}}
+				o := config.OriginConfig{Name: "app.example.com", ZoneName: "default", RecordType: "CNAME", Proxied: proxied, ReturnToPriority: tc.returnToPriority, CNAMETargets: candidates}
+				s, m := createTestService(o)
+				s.config.DryRun = tc.dryRun
+				current := candidates[tc.current].Target
+				if tc.drift {
+					current = "unknown.example.com"
 				}
-				return []dns.RecordResponse{{ID: "managed", Content: current, Type: dns.RecordResponseTypeCNAME, Proxied: true}}, nil
-			}
-			calls := 0
-			m.ReplaceRecordsFunc = func(context.Context, string, string, []string) error {
-				t.Fatal("Tunnel update must use the verified record ID")
-				return nil
-			}
-			m.UpdateDNSRecordFunc = func(_ context.Context, id, name, typ, value string) (dns.RecordResponse, error) {
-				calls++
-				if id != "managed" || name != o.Name || typ != "CNAME" {
-					t.Fatalf("invalid update id=%s name=%s type=%s", id, name, typ)
-				}
-				if tc.want < 0 || value != groups[tc.want].Target {
-					t.Fatalf("unexpected selection %s", value)
-				}
-				if !tc.mismatch {
-					current = value
-				}
-				return dns.RecordResponse{ID: id, Content: value, Type: dns.RecordResponseTypeCNAME, Proxied: true}, nil
-			}
-			checker := hcmock.NewCheckerMock(func(probe string) error {
-				for _, g := range groups {
-					if probe == g.ProbeURL {
-						if tc.failed[g.Name] {
-							return fmt.Errorf("not ready")
-						}
-						return nil
+				m.GetDNSRecordsFunc = func(context.Context, string, string) ([]dns.RecordResponse, error) {
+					if tc.missing {
+						return nil, nil
 					}
+					return []dns.RecordResponse{{ID: "managed", Content: current, Type: dns.RecordResponseTypeCNAME, Proxied: proxied}}, nil
 				}
-				return fmt.Errorf("not a fixed group probe")
+				calls := 0
+				m.ReplaceRecordsFunc = func(context.Context, string, string, []string) error {
+					t.Fatal("CNAME update must use the verified record ID")
+					return nil
+				}
+				m.UpdateDNSRecordFunc = func(_ context.Context, id, name, typ, value string) (dns.RecordResponse, error) {
+					calls++
+					if id != "managed" || name != o.Name || typ != "CNAME" {
+						t.Fatalf("invalid update id=%s name=%s type=%s", id, name, typ)
+					}
+					if tc.want < 0 || value != candidates[tc.want].Target {
+						t.Fatalf("unexpected selection %s", value)
+					}
+					if !tc.mismatch {
+						current = value
+					}
+					return dns.RecordResponse{ID: id, Content: value, Type: dns.RecordResponseTypeCNAME, Proxied: proxied}, nil
+				}
+				checker := hcmock.NewCheckerMock(func(probe string) error {
+					for _, g := range candidates {
+						if probe == g.ProbeURL {
+							if tc.failed[g.Name] {
+								return fmt.Errorf("not ready")
+							}
+							return nil
+						}
+					}
+					return fmt.Errorf("not a fixed group probe")
+				})
+				err := s.checkCNAMEOrigin(context.Background(), o, checker)
+				if (err != nil) != tc.wantErr {
+					t.Fatalf("error=%v wantErr=%v", err, tc.wantErr)
+				}
+				wantCalls := 0
+				if tc.want >= 0 {
+					wantCalls = 1
+				}
+				if calls != wantCalls {
+					t.Fatalf("writes=%d want %d", calls, wantCalls)
+				}
 			})
-			err := s.checkTunnelOrigin(context.Background(), o, checker)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("error=%v wantErr=%v", err, tc.wantErr)
-			}
-			wantCalls := 0
-			if tc.want >= 0 {
-				wantCalls = 1
-			}
-			if calls != wantCalls {
-				t.Fatalf("writes=%d want %d", calls, wantCalls)
-			}
-		})
+		}
 	}
 }
 
@@ -107,7 +109,7 @@ func TestDryRunAlsoProtectsExistingIPOrigins(t *testing.T) {
 	s.checkOrigin(context.Background(), origin, hcmock.NewCheckerMock(func(string) error { return nil }))
 }
 
-func TestTunnelRefusesDNSChangesDuringProbe(t *testing.T) {
+func TestCNAMERefusesDNSChangesDuringProbe(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		mutate  func(*dns.RecordResponse)
@@ -115,20 +117,20 @@ func TestTunnelRefusesDNSChangesDuringProbe(t *testing.T) {
 		readErr bool
 	}{
 		{name: "target changed", mutate: func(r *dns.RecordResponse) { r.Content = "manual.example.com" }},
-		{name: "target changed to another managed tier", mutate: func(r *dns.RecordResponse) { r.Content = "11111111-1111-1111-1111-111111111111.cfargotunnel.com" }},
+		{name: "target changed to another managed tier", mutate: func(r *dns.RecordResponse) { r.Content = "primary.example.net" }},
 		{name: "record recreated", mutate: func(r *dns.RecordResponse) { r.ID = "replacement" }},
 		{name: "proxy changed", mutate: func(r *dns.RecordResponse) { r.Proxied = false }},
 		{name: "record removed", missing: true},
 		{name: "read failed", readErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			groups := []config.TunnelGroup{
-				{Name: "primary", Priority: 100, Target: "11111111-1111-1111-1111-111111111111.cfargotunnel.com", ProbeURL: "https://primary-probe.example.com/healthz"},
-				{Name: "backup", Priority: 0, Target: "22222222-2222-2222-2222-222222222222.cfargotunnel.com", ProbeURL: "https://backup-probe.example.com/healthz"},
+			candidates := []config.CNAMETarget{
+				{Name: "primary", Priority: 100, Target: "primary.example.net", ProbeURL: "https://primary-probe.example.com/healthz"},
+				{Name: "backup", Priority: 0, Target: "backup.example.net", ProbeURL: "https://backup-probe.example.com/healthz"},
 			}
-			origin := config.OriginConfig{Name: "app.example.com", ZoneName: "default", RecordType: "CNAME", Proxied: true, ReturnToPriority: true, TunnelGroups: groups}
+			origin := config.OriginConfig{Name: "app.example.com", ZoneName: "default", RecordType: "CNAME", Proxied: true, ReturnToPriority: true, CNAMETargets: candidates}
 			s, m := createTestService(origin)
-			current := dns.RecordResponse{ID: "managed", Type: dns.RecordResponseTypeCNAME, Content: groups[1].Target, Proxied: true}
+			current := dns.RecordResponse{ID: "managed", Type: dns.RecordResponseTypeCNAME, Content: candidates[1].Target, Proxied: true}
 			probed := false
 			m.GetDNSRecordsFunc = func(context.Context, string, string) ([]dns.RecordResponse, error) {
 				if probed && tc.readErr {
@@ -152,7 +154,7 @@ func TestTunnelRefusesDNSChangesDuringProbe(t *testing.T) {
 				}
 				return nil
 			})
-			if err := s.checkTunnelOrigin(context.Background(), origin, checker); err == nil {
+			if err := s.checkCNAMEOrigin(context.Background(), origin, checker); err == nil {
 				t.Error("accepted DNS changed during probe")
 			}
 			if writes != 0 {

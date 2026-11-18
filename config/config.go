@@ -59,10 +59,12 @@ type ZoneConfig struct {
 
 // OriginConfig はオリジンサーバーの設定を表す構造体
 type OriginConfig struct {
+	CNAMETargets []CNAMETarget `json:"cname_targets,omitempty" yaml:"cname_targets,omitempty"`
+	// Deprecated: use CNAMETargets. Legacy Tunnel configuration is normalized on load.
 	TunnelGroups        []TunnelGroup   `json:"tunnel_groups,omitempty" yaml:"tunnel_groups,omitempty"`
 	Name                string          `json:"name" yaml:"name"`
 	ZoneName            string          `json:"zone_name" yaml:"zone_name"`     // 対象のゾーン名
-	RecordType          string          `json:"record_type" yaml:"record_type"` // "A" または "AAAA"
+	RecordType          string          `json:"record_type" yaml:"record_type"` // "A", "AAAA", or "CNAME"
 	HealthCheck         HealthCheck     `json:"health_check" yaml:"health_check"`
 	PriorityLevels      []PriorityLevel `json:"priority_levels,omitempty" yaml:"priority_levels,omitempty"`             // 優先度付きIPグループ（高い値ほど優先）
 	PriorityFailoverIPs []string        `json:"priority_failover_ips,omitempty" yaml:"priority_failover_ips,omitempty"` // 互換用: 優先的に使用するフェイルオーバー用のIPアドレスリスト
@@ -299,8 +301,11 @@ func normalizeOrigins(config *Config) error {
 	for i := range config.Origins {
 		origin := &config.Origins[i]
 		normalizeOriginPriorityLevels(origin)
-		if err := validateOriginMode(*origin); err != nil {
-			return fmt.Errorf("invalid record type for origin %s: %w", origin.Name, err)
+		if err := normalizeLegacyTunnelGroups(origin); err != nil {
+			return fmt.Errorf("invalid origin %s: %w", origin.Name, err)
+		}
+		if err := normalizeOriginMode(origin); err != nil {
+			return fmt.Errorf("invalid origin %s: %w", origin.Name, err)
 		}
 		if origin.ZoneName == "" && defaultZoneName != "" {
 			origin.ZoneName = defaultZoneName

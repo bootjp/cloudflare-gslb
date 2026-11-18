@@ -1,122 +1,45 @@
-# Priority groups backed by shared tunnels
+# Example: shared Cloudflare Tunnels as CNAME destinations
 
-This mode uses one Tunnel UUID per service and priority tier. Healthy replicas in
-the same tier connect using the same token. Cloudflare chooses the replica; there
-is no guarantee of equal traffic shares. GSLB selects the tier by updating a
-single proxied CNAME.
+Cloudflare Tunnel is one use of [generic CNAME failover](cname-failover.md).
+Use `config.tunnels.json.example`, which sets `cname_targets` to Tunnel UUID
+hostnames and `proxied` to `true`. Provision Tunnels and publish their ingress
+rules separately; GSLB selects DNS destinations and does not create connectors.
 
-A primary tier can have replicas on two hosts, while a backup tier uses another
-set of hosts. All replicas in a tier must be able to serve the same application.
-Services need separate connector processes so that an unhealthy replica of one
-application can disconnect without also disconnecting other applications.
+## Shared replicas per priority
 
-## Configuration and probes
+A primary tier can use one Tunnel UUID with replicas on two ingress hosts.
+A backup tier can use another UUID and another set of hosts. Healthy replicas
+within a tier connect with the same token. Cloudflare chooses a replica; equal
+traffic shares are not guaranteed. GSLB chooses the priority tier by changing a
+single public CNAME, using the same logic as for any other DNS destination.
 
-Start from `config.tunnels.json.example`. The example UUIDs and secret markers are
-placeholders and must be replaced before live use. Keep credentials in the
-deployment secret store, never in Git. Existing A/AAAA origins can remain in the same
-configuration. `dry_run` applies to every origin, including A/AAAA.
+All replicas in a tier must serve the same application. Run the independent
+[Tunnel replica supervisor](tunnel-replica.md) for each connector to disconnect
+it when its application cannot serve requests. Services need separate connector
+processes so failure of one application does not disconnect unrelated services.
+The supervisor has its own configuration and does not update DNS.
 
-Each group has a fixed HTTPS published probe hostname pointing to its UUID. The
-main public hostname is not a group probe, and the UUID hostname is not a public
-HTTPS probe URL. TLS verification and status 200 are required; redirects fail.
-Probe and application hostnames are compared in IDNA ASCII form, so Unicode and
-punycode spellings cannot bypass the fixed-probe requirement.
-Disable caching on the published probe paths. Allow only the exact health path on
-each probe hostname and end the ingress configuration with `http_status:404`.
-Rewrite the probe Host to the canonical application host inside cloudflared.
+## Fixed group probes
 
-Remotely managed replicas in one Tunnel receive the same ingress configuration.
-For example, replicas can use `http://127.0.0.1:8080` on each host, where a local
-proxy routes the canonical Host to the application.
+Each UUID needs a fixed published HTTPS probe hostname pointing to that UUID.
+The managed public hostname is not an independent probe. A UUID hostname is also
+not a suitable public HTTPS probe URL; use a published name with a matching edge
+certificate. Restrict each probe ingress to the exact readiness path and finish
+the ingress configuration with `http_status:404`. Disable caching for readiness.
+Rewrite the origin Host to the canonical application host inside cloudflared.
 
-The group check samples a connected replica. It cannot individually select or
-remove a replica. The independent local health gate is required for each replica.
-An origin failure can race with disconnection and produce transient 502/503s or
-a temporary group failover. Existing TCP/WebSocket connections can be interrupted.
-This mode does not promise zero downtime or eliminate observation/TOCTOU races.
+Remotely managed replicas in a Tunnel receive the same ingress configuration.
+For example, all replicas can forward to `http://127.0.0.1:8080`, with a local
+proxy routing the canonical Host to the application.
 
-## Replica health gate
+A group probe samples one connected replica. It cannot prove each replica is
+healthy or remove an unhealthy replica individually. Local gates independently
+probe origins and disconnect their owned connectors. Origin failure can race
+with disconnection, resulting in transient 502/503 responses, a group failover,
+or interrupted TCP/WebSocket connections.
 
-Build `go build -o tunnel-replica ./cmd/tunnel-replica` and install cloudflared
-separately from its official package. The `tunnel-replica` binary owns a single
-cloudflared child process. It starts disconnected, requires `rise` successful
-local checks before starting the child, and terminates that child after `fall`
-failed checks. It probes the origin directly while disconnected, so recovery
-does not depend on a running public tunnel. A healthy child that crashes is
-restarted on a later successful tick. A gate exit cleans up its child.
-
-Use `deploy/replica.json.example` and `deploy/tunnel-replica@.service`. Create the
-unprivileged `cloudflared` OS account, install root-owned configuration and token
-files readable only by that account, and use a different loopback metrics port
-for every service on a host. Validate before installing/enabling the unit:
-
-```sh
-tunnel-replica -config /etc/cloudflared-replicas/app-primary.json -validate
-```
-
-The unit runs both the gate and its child in the same cgroup. Do not run a second
-unmanaged cloudflared instance with the same service token on that node: it would
-continue accepting traffic while the managed replica is unhealthy.
-
-Gate probes are local, independent of the public group URL:
-
-| Application probe | Local gate path | Group probe path |
-| --- | --- | --- |
-| Standard readiness | `/healthz` | `/healthz` |
-| Readiness plus external dependency check | `/healthz` | `/health/dependencies` |
-
-Origin certificates must validate for the probe URL if HTTPS is used. HTTP gates are restricted by
-deployment to loopback or a private origin path, never a public unencrypted link.
-The canonical Host override is intended for local HTTP virtual hosts; use a
-matching URL/certificate for HTTPS.
-
-If the dependency probe needs an authentication header, load its value from the
-secret store. A cheaper readiness check can be used for the frequent local gate,
-while the group probe tests dependencies and can move the whole tier out of
-service. Never use a fixed proxy 200 as application readiness.
-
-## Migration and drift handling
-
-Run shadow probes while public DNS is still A/AAAA:
-
-```sh
-go run ./cmd/oneshot -config /secure/path/tunnels.json -dry-run
-```
-
-Dry run reads DNS and probes the groups without creating records or sending
-failover notifications. An absent CNAME is allowed only in dry run. Normal
-operation requires one pre-created, proxied CNAME pointing to a configured UUID.
-An unknown target, unexpected proxy state, or multiple records stops writes.
-After probing, GSLB re-reads the CNAME and compares its record ID, target, and proxy
-state with the initial snapshot. A change or failed re-read stops the update.
-The update uses the original record ID, so it cannot create or overwrite a
-replacement record after deletion. This is not an atomic compare-and-swap:
-a concurrent edit to the same record between the final check and update can
-still race with GSLB.
-
-Back up every original DNS record and all GSLB/proxy settings. Stop the old writer
-for each migrated hostname before changing record type. A/AAAA to CNAME is an
-explicit migration; the monitor never deletes A/AAAA records to perform it.
-Updating an existing CNAME uses its existing record ID (not create-before-delete)
-and verifies the selected value by reading it back before announcing success.
-All unhealthy groups leave the last CNAME unchanged and report an error.
-Return to a higher tier obeys `return_to_priority`; disabling it keeps monitoring
-the current/lower eligible tiers without automatically failing back.
-
-Validate the primary replicas separately by temporarily stopping one connector
-at a time in a maintenance window. A public group check alone cannot prove both
-replicas work. Test app failure with cloudflared initially still connected, gate
-disconnection, recovery, total primary-tier failure, backup readiness, and failback. Keep
-the old ingress/firewall path until those checks pass.
-
-For rollback:
-
-1. Stop the new writer for the hostname and restore any closed firewall paths.
-2. Remove the migrated Tunnel CNAME, or replace its record type with an original
-   A/AAAA record. A CNAME cannot coexist with A/AAAA records at the same hostname.
-3. Restore all original A/AAAA records, including their targets, TTLs, and proxy
-   settings, and read them back to verify the restored state.
-4. Re-enable the old writer only after that verification succeeds.
-
-Existing non-migrated origins remain managed by the original deployment throughout.
+Validate replicas separately by stopping one connector at a time in a
+maintenance window. Test origin failure while a connector is still connected,
+gate disconnection, recovery, total primary-tier failure, backup readiness, and
+failback. Follow the generic [migration and rollback steps](cname-failover.md#migration-and-rollback)
+for DNS record-type changes and writer ownership.
