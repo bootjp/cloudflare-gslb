@@ -14,7 +14,7 @@ import (
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
 	"github.com/bootjp/cloudflare-gslb/pkg/healthcheck"
 	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
 	"github.com/cockroachdb/errors"
 )
 

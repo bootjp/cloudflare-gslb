@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/bootjp/cloudflare-gslb/pkg/cloudflare"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
 )
 
 // DNSClientMock はCloudflare DNSクライアントのモック
