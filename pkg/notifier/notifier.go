@@ -10,6 +10,8 @@ type FailoverEvent struct {
 	OriginName             string
 	ZoneName               string
 	RecordType             string
+	OldTargetName          string
+	NewTargetName          string
 	OldIP                  string
 	NewIP                  string
 	OldIPs                 []string
@@ -28,11 +30,12 @@ type FailoverEvent struct {
 	MaxPriority            int
 }
 
-// HealthCheckFailure identifies an unhealthy IP at a priority level.
+// HealthCheckFailure identifies an unhealthy destination at a priority level.
 type HealthCheckFailure struct {
-	Priority int
-	IP       string
-	Reason   string
+	TargetName string
+	Priority   int
+	IP         string
+	Reason     string
 }
 
 // Notifier is the interface that all notifiers must implement

@@ -210,7 +210,7 @@ func (s *Service) monitorOrigin(ctx context.Context, origin config.OriginConfig)
 }
 
 func (s *Service) checkOrigin(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) {
-	if origin.RecordType == "CNAME" {
+	if origin.RecordType == recordTypeCNAME {
 		if err := s.checkCNAMEOrigin(ctx, origin, checker); err != nil {
 			log.Printf("CNAME check failed for %s: %v", origin.Name, err)
 		}
@@ -554,6 +554,8 @@ func (s *Service) sendNotifications(origin config.OriginConfig, oldIPs, newIPs [
 		OriginName:             origin.Name,
 		ZoneName:               origin.ZoneName,
 		RecordType:             origin.RecordType,
+		OldTargetName:          cnameTargetName(origin, firstIP(oldIPs)),
+		NewTargetName:          cnameTargetName(origin, firstIP(newIPs)),
 		OldIP:                  firstIP(oldIPs),
 		NewIP:                  firstIP(newIPs),
 		OldIPs:                 oldIPs,
@@ -610,7 +612,7 @@ func (s *Service) runOriginCheck(ctx context.Context, origin config.OriginConfig
 	if err != nil {
 		return fmt.Errorf("failed to create health checker for %s: %w", origin.Name, err)
 	}
-	if origin.RecordType == "CNAME" {
+	if origin.RecordType == recordTypeCNAME {
 		return s.checkCNAMEOrigin(ctx, origin, checker)
 	}
 	s.checkOrigin(ctx, origin, checker)

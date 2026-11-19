@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -54,6 +53,7 @@ type discordFooter struct {
 // Notify sends a notification to Discord
 func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	color := discordColor(event)
+	oldTarget, newTarget := notificationTargets(event)
 	hostname := event.CheckerHostname
 	if hostname == "" {
 		hostname = "unknown"
@@ -69,8 +69,8 @@ func (d *DiscordNotifier) Notify(ctx context.Context, event FailoverEvent) error
 				Fields: []discordField{
 					{Name: "Origin", Value: fmt.Sprintf("%s (%s)", originName, event.RecordType), Inline: true},
 					{Name: "Event Type", Value: d.getEventType(event), Inline: true},
-					{Name: "Old IPs", Value: formatDiscordIPList(event.OldIPs, event.OldIP), Inline: true},
-					{Name: "New IPs", Value: formatDiscordIPList(event.NewIPs, event.NewIP), Inline: true},
+					{Name: oldTarget.Title, Value: oldTarget.Value, Inline: true},
+					{Name: newTarget.Title, Value: newTarget.Value, Inline: true},
 					{Name: "Checker Host", Value: hostname, Inline: true},
 				},
 				Footer: &discordFooter{
@@ -124,22 +124,6 @@ func discordColor(event FailoverEvent) int {
 	return color
 }
 
-func formatHealthCheckFailures(failures []HealthCheckFailure) string {
-	lines := make([]string, 0, len(failures))
-	for _, failure := range failures {
-		if failure.IP == "" {
-			lines = append(lines, fmt.Sprintf("Priority %d: %s", failure.Priority, failure.Reason))
-		} else {
-			lines = append(lines, fmt.Sprintf("Priority %d, %s: %s", failure.Priority, failure.IP, failure.Reason))
-		}
-	}
-	value := []rune(strings.Join(lines, "\n"))
-	if len(value) > 1024 {
-		return string(value[:1021]) + "..."
-	}
-	return string(value)
-}
-
 func (d *DiscordNotifier) getEventType(event FailoverEvent) string {
 	switch {
 	case event.IsSamePriorityFailover:
@@ -147,22 +131,12 @@ func (d *DiscordNotifier) getEventType(event FailoverEvent) string {
 	case event.IsSamePriorityRecovery:
 		return "✅ Recovery within Priority Level"
 	case event.ReturnToPriority && event.IsPriorityIP:
-		return "✅ Recovery (Return to Priority IP)"
+		return fmt.Sprintf("✅ Recovery (Return to Priority %s)", destinationKind(event))
 	case event.IsPriorityIP:
-		return "⚠️ Failover to Priority IP"
+		return fmt.Sprintf("⚠️ Failover to Priority %s", destinationKind(event))
 	case event.IsFailoverIP:
-		return "❌ Failover to Backup IP"
+		return fmt.Sprintf("❌ Failover to Backup %s", destinationKind(event))
 	default:
 		return "⚠️ Failover"
 	}
-}
-
-func formatDiscordIPList(ips []string, fallback string) string {
-	if len(ips) == 0 {
-		if fallback == "" {
-			return "-"
-		}
-		return fallback
-	}
-	return strings.Join(ips, "\n")
 }

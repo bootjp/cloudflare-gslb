@@ -16,7 +16,7 @@ An origin with `record_type: CNAME` requires `cname_targets`:
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Unique label used in diagnostics |
+| `name` | Unique label shown in notifications and diagnostics |
 | `priority` | Unique priority; larger values are preferred |
 | `target` | DNS hostname to write as the CNAME value |
 | `probe_url` | Fixed HTTPS readiness URL for this candidate |
@@ -106,3 +106,12 @@ Other origins can continue using their current writer throughout.
 Use `cname_targets` for both ordinary DNS destinations and Tunnel UUID hostnames.
 No Tunnel management API or replica supervisor is needed for ordinary CNAME
 failover. See [shared Tunnel example](tunnel-groups.md) for Tunnel-specific setup.
+
+## Notification labels
+
+Discord and Slack notifications show each CNAME candidate's configured `name`
+and priority above its DNS target, using `Old Target` and `New Target` fields.
+For example, a switch from `primary` at priority 100 to `backup` at priority 0
+shows those names as well as the underlying DNS hostnames. Failed probe entries
+also include the candidate name. No provider API lookup or additional credentials
+are required. A/AAAA notifications retain their IP address fields.
