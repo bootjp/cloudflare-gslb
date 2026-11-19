@@ -101,13 +101,8 @@ For rollback:
 
 Other origins can continue using their current writer throughout.
 
-## Legacy Tunnel configuration
+## Tunnel usage
 
-Existing `tunnel_groups` configurations are accepted as a compatibility input and
-normalized to `cname_targets` when loaded. Keep the legacy requirements of
-`proxied: true`, UUID destinations, and published HTTPS probe hostnames for that
-input. Use `cname_targets` for new configurations, arbitrary DNS destinations, or
-DNS-only records. Do not supply both fields on one origin.
-
+Use `cname_targets` for both ordinary DNS destinations and Tunnel UUID hostnames.
 No Tunnel management API or replica supervisor is needed for ordinary CNAME
 failover. See [shared Tunnel example](tunnel-groups.md) for Tunnel-specific setup.

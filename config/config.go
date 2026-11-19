@@ -59,9 +59,7 @@ type ZoneConfig struct {
 
 // OriginConfig はオリジンサーバーの設定を表す構造体
 type OriginConfig struct {
-	CNAMETargets []CNAMETarget `json:"cname_targets,omitempty" yaml:"cname_targets,omitempty"`
-	// Deprecated: use CNAMETargets. Legacy Tunnel configuration is normalized on load.
-	TunnelGroups        []TunnelGroup   `json:"tunnel_groups,omitempty" yaml:"tunnel_groups,omitempty"`
+	CNAMETargets        []CNAMETarget   `json:"cname_targets,omitempty" yaml:"cname_targets,omitempty"`
 	Name                string          `json:"name" yaml:"name"`
 	ZoneName            string          `json:"zone_name" yaml:"zone_name"`     // 対象のゾーン名
 	RecordType          string          `json:"record_type" yaml:"record_type"` // "A", "AAAA", or "CNAME"
@@ -301,9 +299,6 @@ func normalizeOrigins(config *Config) error {
 	for i := range config.Origins {
 		origin := &config.Origins[i]
 		normalizeOriginPriorityLevels(origin)
-		if err := normalizeLegacyTunnelGroups(origin); err != nil {
-			return fmt.Errorf("invalid origin %s: %w", origin.Name, err)
-		}
 		if err := normalizeOriginMode(origin); err != nil {
 			return fmt.Errorf("invalid origin %s: %w", origin.Name, err)
 		}
