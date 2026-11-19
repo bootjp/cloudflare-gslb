@@ -64,6 +64,11 @@ values are never included in these diagnostics.
 ### JSON Configuration
 
 Copy `config.json.example` to create `config.json` and configure the necessary settings.
+This example includes A, AAAA, and CNAME origins. For a CNAME-only configuration,
+use `config.cname.json.example`; for Cloudflare Tunnel destinations, use
+`config.tunnels.json.example`. Both focused examples start with `dry_run: true`;
+set it to `false` only after verifying probes and DNS ownership.
+Replace or remove the example webhook entries before running the monitor.
 
 ```bash
 cp config.json.example config.json
@@ -71,7 +76,7 @@ cp config.json.example config.json
 
 ### YAML Configuration
 
-Alternatively, you can use YAML format by copying `config.yaml.example`:
+Alternatively, `config.yaml.example` shows the same A, AAAA, and CNAME origins in YAML:
 
 ```bash
 cp config.yaml.example config.yaml
@@ -105,7 +110,7 @@ Example configuration file:
   ],
   "origins": [
     {
-      "name": "www",
+      "name": "www.example.com",
       "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
@@ -137,7 +142,7 @@ Example configuration file:
       "return_to_priority": true
     },
     {
-      "name": "api",
+      "name": "api.example.com",
       "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
@@ -168,7 +173,7 @@ Example configuration file:
       "return_to_priority": true
     },
     {
-      "name": "ipv6",
+      "name": "ipv6.example.org",
       "zone_name": "example.org",
       "record_type": "AAAA",
       "health_check": {
@@ -193,6 +198,31 @@ Example configuration file:
       ],
       "proxied": false,
       "return_to_priority": true
+    },
+    {
+      "name": "app.example.com",
+      "zone_name": "example.com",
+      "record_type": "CNAME",
+      "proxied": false,
+      "return_to_priority": true,
+      "health_check": {
+        "type": "url",
+        "timeout": 5
+      },
+      "cname_targets": [
+        {
+          "name": "primary",
+          "priority": 100,
+          "target": "primary.example.net",
+          "probe_url": "https://primary.example.net/healthz"
+        },
+        {
+          "name": "backup",
+          "priority": 0,
+          "target": "backup.example.org",
+          "probe_url": "https://backup.example.org/healthz"
+        }
+      ]
     }
   ]
 }
@@ -200,6 +230,7 @@ Example configuration file:
 
 ### Configuration Options
 
+- `dry_run` (optional, default `false`): Read DNS and probe candidates without updating records or sending notifications
 - `cloudflare_api_token`: Cloudflare API token
 - `check_interval_seconds`: Health check interval (in seconds)
 - `cloudflare_zones`: Array of Cloudflare zones to manage
