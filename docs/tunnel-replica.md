@@ -8,8 +8,16 @@ checks for each connector.
 
 ## Installation and readiness
 
-Build `go build -o tunnel-replica ./cmd/tunnel-replica` and install cloudflared
-separately from its official package. The `tunnel-replica` binary owns a single
+On the target Linux host, build from the repository root and install the binary
+at the path used by the systemd unit:
+
+```sh
+go build -o tunnel-replica ./cmd/tunnel-replica
+sudo install -o root -g root -m 0755 tunnel-replica /usr/local/bin/tunnel-replica
+```
+
+Install cloudflared separately from its official package. The installed
+`tunnel-replica` binary owns a single
 cloudflared child process. It starts disconnected, requires `rise` successful
 local checks before starting the child, and terminates that child after `fall`
 failed checks. It probes the origin directly while disconnected, so recovery
@@ -22,7 +30,7 @@ files readable only by that account, and use a different loopback metrics port
 for every service on a host. Validate before installing/enabling the unit:
 
 ```sh
-tunnel-replica -config /etc/cloudflared-replicas/app-primary.json -validate
+sudo -u cloudflared /usr/local/bin/tunnel-replica -config /etc/cloudflared-replicas/app-primary.json -validate
 ```
 
 The unit runs both the gate and its child in the same cgroup. Do not run a second
