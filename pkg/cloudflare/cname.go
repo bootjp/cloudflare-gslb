@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	cf "github.com/cloudflare/cloudflare-go/v6"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
+	cf "github.com/cloudflare/cloudflare-go/v7"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
 )
 
 const recordCNAME = "CNAME"

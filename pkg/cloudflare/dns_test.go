@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudflare/cloudflare-go/v6/dns"
-	"github.com/cloudflare/cloudflare-go/v6/option"
-	"github.com/cloudflare/cloudflare-go/v6/packages/pagination"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
+	"github.com/cloudflare/cloudflare-go/v7/option"
+	"github.com/cloudflare/cloudflare-go/v7/packages/pagination"
 	crerrors "github.com/cockroachdb/errors"
 )
 

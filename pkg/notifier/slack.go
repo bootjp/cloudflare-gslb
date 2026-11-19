@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -47,15 +46,8 @@ type slackField struct {
 
 // Notify sends a notification to Slack
 func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
-	color := "warning"
-	switch {
-	case event.IsSamePriorityFailover:
-		color = "danger"
-	case event.IsSamePriorityRecovery || event.ReturnToPriority && event.IsPriorityIP:
-		color = "good"
-	case event.IsFailoverIP:
-		color = "danger"
-	}
+	color := slackColor(event)
+	oldTarget, newTarget := notificationTargets(event)
 
 	originName := displayOrigin(event.OriginName, event.ZoneName)
 	message := slackMessage{
@@ -65,8 +57,8 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 				Color: color,
 				Fields: []slackField{
 					{Title: "Origin", Value: fmt.Sprintf("%s (%s)", originName, event.RecordType), Short: true},
-					{Title: "Old IPs", Value: formatIPList(event.OldIPs, event.OldIP), Short: true},
-					{Title: "New IPs", Value: formatIPList(event.NewIPs, event.NewIP), Short: true},
+					{Title: oldTarget.Title, Value: oldTarget.Value, Short: true},
+					{Title: newTarget.Title, Value: newTarget.Value, Short: true},
 					{Title: "Event Type", Value: s.getEventType(event), Short: true},
 					{Title: "Reason", Value: event.Reason, Short: false},
 				},
@@ -76,6 +68,9 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 		},
 	}
 
+	if len(event.HealthCheckFailures) > 0 {
+		message.Attachments[0].Fields = append(message.Attachments[0].Fields, slackField{Title: "Health Check Failures", Value: formatHealthCheckFailures(event.HealthCheckFailures)})
+	}
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Slack message: %w", err)
@@ -101,6 +96,19 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	return nil
 }
 
+func slackColor(event FailoverEvent) string {
+	switch {
+	case event.IsSamePriorityFailover:
+		return "danger"
+	case event.IsSamePriorityRecovery || event.ReturnToPriority && event.IsPriorityIP:
+		return "good"
+	case event.IsFailoverIP:
+		return "danger"
+	default:
+		return "warning"
+	}
+}
+
 func (s *SlackNotifier) getEventType(event FailoverEvent) string {
 	switch {
 	case event.IsSamePriorityFailover:
@@ -108,22 +116,12 @@ func (s *SlackNotifier) getEventType(event FailoverEvent) string {
 	case event.IsSamePriorityRecovery:
 		return "Recovery within Priority Level"
 	case event.ReturnToPriority && event.IsPriorityIP:
-		return "Recovery (Return to Priority IP)"
+		return fmt.Sprintf("Recovery (Return to Priority %s)", destinationKind(event))
 	case event.IsPriorityIP:
-		return "Failover to Priority IP"
+		return fmt.Sprintf("Failover to Priority %s", destinationKind(event))
 	case event.IsFailoverIP:
-		return "Failover to Backup IP"
+		return fmt.Sprintf("Failover to Backup %s", destinationKind(event))
 	default:
 		return "Failover"
 	}
-}
-
-func formatIPList(ips []string, fallback string) string {
-	if len(ips) == 0 {
-		if fallback == "" {
-			return "-"
-		}
-		return fallback
-	}
-	return strings.Join(ips, "\n")
 }

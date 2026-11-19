@@ -12,7 +12,7 @@ import (
 	cfmock "github.com/bootjp/cloudflare-gslb/pkg/cloudflare/mock"
 	hcmock "github.com/bootjp/cloudflare-gslb/pkg/healthcheck/mock"
 	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
 )
 
 type MockDNSClient struct {

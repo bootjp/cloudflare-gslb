@@ -12,6 +12,8 @@ import (
 	"github.com/bootjp/cloudflare-gslb/pkg/notifier"
 )
 
+const recordTypeCNAME = "CNAME"
+
 // checkCNAMEOrigin selects one healthy DNS target according to its priority.
 func (s *Service) checkCNAMEOrigin(ctx context.Context, origin config.OriginConfig, checker healthcheck.Checker) error {
 	s.checkMutex.Lock()
@@ -42,7 +44,7 @@ func (s *Service) checkCNAMEOrigin(ctx context.Context, origin config.OriginConf
 	if err := confirmCNAMEState(ctx, client, origin, state); err != nil {
 		return err
 	}
-	if _, err := client.UpdateDNSRecord(ctx, state.recordID, origin.Name, "CNAME", target); err != nil {
+	if _, err := client.UpdateDNSRecord(ctx, state.recordID, origin.Name, recordTypeCNAME, target); err != nil {
 		return fmt.Errorf("update CNAME: %w", err)
 	}
 	if err := confirmCNAMERecord(ctx, client, origin, target); err != nil {
@@ -74,7 +76,7 @@ func selectCNAMETarget(ctx context.Context, origin config.OriginConfig, checker 
 			return group, failures, nil
 		}
 		log.Printf("CNAME target probe failed origin=%s group=%s: %v", origin.Name, group.Name, err)
-		failures = append(failures, notifier.HealthCheckFailure{Priority: group.Priority, IP: config.CanonicalDNSName(group.Target), Reason: err.Error()})
+		failures = append(failures, notifier.HealthCheckFailure{TargetName: group.Name, Priority: group.Priority, IP: config.CanonicalDNSName(group.Target), Reason: err.Error()})
 	}
 	return config.CNAMETarget{}, failures, fmt.Errorf("all eligible CNAME candidates unhealthy; preserving current DNS")
 }
@@ -88,7 +90,7 @@ type cnameState struct {
 }
 
 func (s *Service) readCNAMEState(ctx context.Context, origin config.OriginConfig, client cloudflare.DNSClientInterface, candidates []config.CNAMETarget) (cnameState, error) {
-	records, err := client.GetDNSRecords(ctx, origin.Name, "CNAME")
+	records, err := client.GetDNSRecords(ctx, origin.Name, recordTypeCNAME)
 	if err != nil {
 		return cnameState{}, fmt.Errorf("read current CNAME: %w", err)
 	}
@@ -111,7 +113,7 @@ func (s *Service) readCNAMEState(ctx context.Context, origin config.OriginConfig
 }
 func confirmCNAMERecord(ctx context.Context, client cloudflare.DNSClientInterface, origin config.OriginConfig, target string) error {
 	// DNS API acknowledgement alone does not prove the selected value was applied.
-	confirmed, err := client.GetDNSRecords(ctx, origin.Name, "CNAME")
+	confirmed, err := client.GetDNSRecords(ctx, origin.Name, recordTypeCNAME)
 	if err != nil {
 		return fmt.Errorf("read back CNAME: %w", err)
 	}
@@ -124,7 +126,7 @@ func confirmCNAMERecord(ctx context.Context, client cloudflare.DNSClientInterfac
 // Recheck the snapshot after probes, then update only the original record ID.
 // This is a drift guard, not an atomic compare-and-swap with the DNS provider.
 func confirmCNAMEState(ctx context.Context, client cloudflare.DNSClientInterface, origin config.OriginConfig, before cnameState) error {
-	records, err := client.GetDNSRecords(ctx, origin.Name, "CNAME")
+	records, err := client.GetDNSRecords(ctx, origin.Name, recordTypeCNAME)
 	if err != nil {
 		return fmt.Errorf("recheck CNAME before update: %w", err)
 	}
@@ -132,4 +134,16 @@ func confirmCNAMEState(ctx context.Context, client cloudflare.DNSClientInterface
 		return fmt.Errorf("CNAME changed during candidate probes; refusing DNS changes")
 	}
 	return nil
+}
+
+func cnameTargetName(origin config.OriginConfig, target string) string {
+	if origin.RecordType != recordTypeCNAME {
+		return ""
+	}
+	for _, candidate := range origin.CNAMETargets {
+		if config.CanonicalDNSName(candidate.Target) == config.CanonicalDNSName(target) {
+			return candidate.Name
+		}
+	}
+	return ""
 }

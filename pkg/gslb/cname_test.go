@@ -7,7 +7,7 @@ import (
 
 	"github.com/bootjp/cloudflare-gslb/config"
 	hcmock "github.com/bootjp/cloudflare-gslb/pkg/healthcheck/mock"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
 )
 
 func TestCNAMEPriorityFailoverAndReadBack(t *testing.T) {
