@@ -105,8 +105,10 @@ func (c *DNSClient) CreateDNSRecord(ctx context.Context, name, recordType, conte
 		body = c.buildARecord(name, content)
 	case "AAAA":
 		body = c.buildAAAARecord(name, content)
+	case recordCNAME:
+		body = c.buildCNAMERecord(name, content)
 	default:
-		body = c.buildARecord(name, content)
+		return dns.RecordResponse{}, errors.New("unsupported DNS record type")
 	}
 
 	params := dns.RecordNewParams{
@@ -129,8 +131,10 @@ func (c *DNSClient) UpdateDNSRecord(ctx context.Context, recordID, name, recordT
 		body = c.buildARecord(name, content)
 	case "AAAA":
 		body = c.buildAAAARecord(name, content)
+	case recordCNAME:
+		body = c.buildCNAMERecord(name, content)
 	default:
-		body = c.buildARecord(name, content)
+		return dns.RecordResponse{}, errors.New("unsupported DNS record type")
 	}
 
 	params := dns.RecordUpdateParams{
@@ -161,6 +165,9 @@ func (c *DNSClient) ReplaceRecords(ctx context.Context, name, recordType string,
 		return errors.New("no record contents provided")
 	}
 
+	if recordType == recordCNAME {
+		return c.replaceCNAME(ctx, name, newContents)
+	}
 	desired := dedupeContents(newContents)
 
 	records, err := c.GetDNSRecords(ctx, name, recordType)

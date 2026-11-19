@@ -32,12 +32,14 @@ const schemeHTTPS = "https"
 
 func NewChecker(hc config.HealthCheck) (Checker, error) {
 	switch hc.Type {
-	case "http":
+	case "url":
+		return &URLChecker{Timeout: time.Duration(hc.Timeout) * time.Second, Headers: hc.Headers, Host: hc.Host}, nil
+	case schemeHTTP:
 		return &HttpChecker{
 			Endpoint: hc.Endpoint,
 			Host:     hc.Host,
 			Timeout:  time.Duration(hc.Timeout) * time.Second,
-			Scheme:   "http",
+			Scheme:   schemeHTTP,
 			Headers:  hc.Headers,
 		}, nil
 	case schemeHTTPS:

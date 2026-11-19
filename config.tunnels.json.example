@@ -1,0 +1,38 @@
+{
+  "dry_run": true,
+  "cloudflare_api_token": "LOAD_FROM_SECRET",
+  "check_interval_seconds": 30,
+  "cloudflare_zones": [
+    {
+      "name": "example.com",
+      "zone_id": "YOUR_ZONE_ID"
+    }
+  ],
+  "origins": [
+    {
+      "name": "app.example.com",
+      "zone_name": "example.com",
+      "record_type": "CNAME",
+      "proxied": true,
+      "return_to_priority": true,
+      "health_check": {
+        "type": "url",
+        "timeout": 5
+      },
+      "cname_targets": [
+        {
+          "name": "primary",
+          "priority": 100,
+          "target": "11111111-1111-1111-1111-111111111111.cfargotunnel.com",
+          "probe_url": "https://probe-primary.example.com/healthz"
+        },
+        {
+          "name": "backup",
+          "priority": 0,
+          "target": "22222222-2222-2222-2222-222222222222.cfargotunnel.com",
+          "probe_url": "https://probe-backup.example.com/healthz"
+        }
+      ]
+    }
+  ]
+}
