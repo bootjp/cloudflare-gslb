@@ -46,16 +46,8 @@ type slackField struct {
 
 // Notify sends a notification to Slack
 func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
-	color := "warning"
+	color := slackColor(event)
 	oldTarget, newTarget := notificationTargets(event)
-	switch {
-	case event.IsSamePriorityFailover:
-		color = "danger"
-	case event.IsSamePriorityRecovery || event.ReturnToPriority && event.IsPriorityIP:
-		color = "good"
-	case event.IsFailoverIP:
-		color = "danger"
-	}
 
 	originName := displayOrigin(event.OriginName, event.ZoneName)
 	message := slackMessage{
@@ -102,6 +94,19 @@ func (s *SlackNotifier) Notify(ctx context.Context, event FailoverEvent) error {
 	}
 
 	return nil
+}
+
+func slackColor(event FailoverEvent) string {
+	switch {
+	case event.IsSamePriorityFailover:
+		return "danger"
+	case event.IsSamePriorityRecovery || event.ReturnToPriority && event.IsPriorityIP:
+		return "good"
+	case event.IsFailoverIP:
+		return "danger"
+	default:
+		return "warning"
+	}
 }
 
 func (s *SlackNotifier) getEventType(event FailoverEvent) string {
