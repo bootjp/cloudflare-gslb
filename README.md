@@ -4,7 +4,7 @@ A Global Server Load Balancing (GSLB) system that provides health checks and aut
 
 ## Features
 
-- Health checks for A and AAAA records
+- Health checks for A, AAAA, and CNAME records
 - HTTPS health checks (with customizable paths and hostnames)
 - HTTP health checks (with customizable paths and hostnames)
 - ICMP health checks
@@ -219,7 +219,7 @@ Example configuration file:
     - `timeout`: Health check timeout in seconds
     - `insecure_skip_verify`: Skip TLS verification for HTTPS checks
     - `headers`: Additional HTTP headers to include with health check requests
-  - `cname_targets`: CNAME candidates, each with a unique `name`, `priority`, DNS `target`, and fixed HTTPS `probe_url` (see [CNAME configuration](docs/cname-failover.md))
+  - `cname_targets`: CNAME candidates, each with a unique `name`, `priority`, DNS `target`, and fixed HTTPS `probe_url`. The `name` is the human-readable label shown in notifications; for a Tunnel destination, set it to the Tunnel name (see [CNAME configuration](docs/cname-failover.md))
   - `priority_levels`: Priority-based IP groups (higher `priority` values are preferred)
     - `priority`: Priority value (higher = higher priority)
     - `ips`: List of IPs for DNS round-robin at that priority level
@@ -370,16 +370,41 @@ Notifications are sent for the following events:
 - **Failover within a Priority Level**: When one IP fails but another IP at the same priority remains healthy
 - **Recovery within a Priority Level**: When an IP at the current priority level becomes healthy again
 
+For CNAME origins, the event labels use `Target` instead of `IP`.
+
 Each notification includes:
+
 - Origin name and zone
-- Record type (A or AAAA)
-- Old IP address(es)
-- New IP address(es)
+- Record type (A, AAAA, or CNAME)
+- Old and new IP address(es) for A/AAAA, or DNS targets for CNAME
 - Event type
 - Reason for the failover
 - Timestamp
 
-Discord notifications also show the hostname of the machine running the health check. On failover, including within the same priority level, they list the failed priority level, IP address, and check error (including the HTTP status for an unhealthy HTTP response). In a container, the hostname is the container hostname; configure the container hostname if you want the underlying host name to appear.
+For CNAME origins, Slack and Discord show `Old Target` and `New Target`
+with each candidate's `cname_targets[].name`, priority, and DNS destination.
+For example, a switch from `primary` at priority 100 to `backup` at priority 0
+shows:
+
+```text
+Old Target: primary (priority 100)
+            primary.example.net
+New Target: backup (priority 0)
+            backup.example.net
+```
+
+Use descriptive candidate names, including Tunnel names when the destinations
+are Cloudflare Tunnel UUID hostnames. These labels come from the configuration;
+no Cloudflare Tunnel API lookup or additional API permissions are required.
+If the previous DNS destination is not a configured candidate, its hostname is
+shown without a candidate label. See [CNAME failover](docs/cname-failover.md)
+for a complete configuration example.
+
+Both notification services include failed health checks when available, with
+the priority, IP address or named CNAME target, and check error (including the
+HTTP status for an unhealthy HTTP response). Discord also shows the hostname
+of the machine running the health check. In a container, this is the container
+hostname; configure it if you want the underlying host name to appear.
 
 ## Usage
 
