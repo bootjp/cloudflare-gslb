@@ -1,67 +1,88 @@
-cloudflare_api_token: YOUR_CLOUDFLARE_API_TOKEN
 check_interval_seconds: 60
+cloudflare_api_token: YOUR_CLOUDFLARE_API_TOKEN
 cloudflare_zones:
-  - zone_id: YOUR_CLOUDFLARE_ZONE_ID_1
-    name: example.com
-  - zone_id: YOUR_CLOUDFLARE_ZONE_ID_2
-    name: example.org
+  - name: example.com
+    zone_id: YOUR_CLOUDFLARE_ZONE_ID_1
+  - name: example.org
+    zone_id: YOUR_CLOUDFLARE_ZONE_ID_2
 notifications:
   - type: slack
     webhook_url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
   - type: discord
     webhook_url: https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK
 origins:
-  - name: www
-    zone_name: example.com
-    record_type: A
-    health_check:
-      type: https
+  - health_check:
       endpoint: /health
+      headers:
+        X-Health-Check: gslb
       host: www.example.com
       timeout: 5
+      type: https
+    name: www.example.com
     priority_levels:
-      - priority: 100
-        ips:
+      - ips:
           - 192.168.1.1
           - 192.168.1.2
-      - priority: 50
-        ips:
+        priority: 100
+      - ips:
           - 192.168.1.3
           - 192.168.1.4
+        priority: 50
     proxied: true
-    return_to_priority: true
-  - name: api
-    zone_name: example.com
     record_type: A
-    health_check:
-      type: http
+    return_to_priority: true
+    zone_name: example.com
+  - health_check:
       endpoint: /status
+      headers:
+        X-Health-Check: gslb
       host: api.example.com
       timeout: 5
+      type: http
+    name: api.example.com
     priority_levels:
-      - priority: 100
-        ips:
+      - ips:
           - 10.0.0.1
-      - priority: 50
-        ips:
+        priority: 100
+      - ips:
           - 10.0.0.2
           - 10.0.0.3
+        priority: 50
     proxied: true
+    record_type: A
     return_to_priority: true
-  - name: ipv6
-    zone_name: example.org
-    record_type: AAAA
-    health_check:
-      type: icmp
+    zone_name: example.com
+  - health_check:
       timeout: 5
+      type: icmp
+    name: ipv6.example.org
     priority_levels:
-      - priority: 100
-        ips:
-          - "2001:db8::1"
-      - priority: 50
-        ips:
-          - "2001:db8::2"
-          - "2001:db8::3"
-          - "2001:db8::4"
+      - ips:
+          - 2001:db8::1
+        priority: 100
+      - ips:
+          - 2001:db8::2
+          - 2001:db8::3
+          - 2001:db8::4
+        priority: 50
     proxied: false
+    record_type: AAAA
     return_to_priority: true
+    zone_name: example.org
+  - cname_targets:
+      - name: primary
+        priority: 100
+        probe_url: https://primary.example.net/healthz
+        target: primary.example.net
+      - name: backup
+        priority: 0
+        probe_url: https://backup.example.org/healthz
+        target: backup.example.org
+    health_check:
+      timeout: 5
+      type: url
+    name: app.example.com
+    proxied: false
+    record_type: CNAME
+    return_to_priority: true
+    zone_name: example.com

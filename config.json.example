@@ -23,7 +23,7 @@
   ],
   "origins": [
     {
-      "name": "www",
+      "name": "www.example.com",
       "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
@@ -55,7 +55,7 @@
       "return_to_priority": true
     },
     {
-      "name": "api",
+      "name": "api.example.com",
       "zone_name": "example.com",
       "record_type": "A",
       "health_check": {
@@ -86,7 +86,7 @@
       "return_to_priority": true
     },
     {
-      "name": "ipv6",
+      "name": "ipv6.example.org",
       "zone_name": "example.org",
       "record_type": "AAAA",
       "health_check": {
@@ -111,6 +111,31 @@
       ],
       "proxied": false,
       "return_to_priority": true
+    },
+    {
+      "name": "app.example.com",
+      "zone_name": "example.com",
+      "record_type": "CNAME",
+      "proxied": false,
+      "return_to_priority": true,
+      "health_check": {
+        "type": "url",
+        "timeout": 5
+      },
+      "cname_targets": [
+        {
+          "name": "primary",
+          "priority": 100,
+          "target": "primary.example.net",
+          "probe_url": "https://primary.example.net/healthz"
+        },
+        {
+          "name": "backup",
+          "priority": 0,
+          "target": "backup.example.org",
+          "probe_url": "https://backup.example.org/healthz"
+        }
+      ]
     }
   ]
-} 
+}
