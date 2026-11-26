@@ -55,6 +55,19 @@ while the group probe tests dependencies and can move the whole tier out of
 service. Never use a fixed proxy 200 as application readiness.
 
 
+For a Tunnel publishing multiple applications, replace the single
+`probe_url`/`host` pair with a `probes` array. Every probe must pass before the
+connector starts, and any failing probe eventually disconnects the entire
+replica. This couples the applications' availability on that ingress host;
+separate Tunnels are needed when they must fail independently. For example:
+
+```json
+"probes": [
+  {"url": "http://127.0.0.1:18082/healthz", "host": "misskey.bootjp.me"},
+  {"url": "http://127.0.0.1:18082/api/heartbeat", "host": "umami.bootjp.me"}
+]
+```
+
 Run the supervisor on the ingress/proxy host that owns the connector, separately
 from application deployment and scaling. The helper owns one connector process
 and uses a local JSON file; it does not create Tunnels, application Pods, or DNS
