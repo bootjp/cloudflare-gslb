@@ -22,6 +22,7 @@ type replicaConfig struct {
 	ProbeURL        string            `json:"probe_url"`
 	Host            string            `json:"host"`
 	Headers         map[string]string `json:"headers"`
+	Probes          []replicaProbe    `json:"probes"`
 	Timeout         int               `json:"timeout_seconds"`
 	Interval        int               `json:"interval_seconds"`
 	Fall            int               `json:"fall"`
@@ -29,6 +30,12 @@ type replicaConfig struct {
 	CloudflaredPath string            `json:"cloudflared_path"`
 	TokenFile       string            `json:"token_file"`
 	MetricsAddress  string            `json:"metrics_address"`
+}
+
+type replicaProbe struct {
+	URL     string            `json:"url"`
+	Host    string            `json:"host"`
+	Headers map[string]string `json:"headers"`
 }
 
 func loadReplicaConfig(path string) (replicaConfig, error) {
@@ -69,14 +76,36 @@ func main() {
 func runReplica(cfg replicaConfig) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	checker := &healthcheck.URLChecker{Timeout: time.Duration(cfg.Timeout) * time.Second, Headers: cfg.Headers, Host: cfg.Host}
 	process := &replica.Process{Path: cfg.CloudflaredPath, Args: []string{"tunnel", "--no-autoupdate", "--metrics", cfg.MetricsAddress, "run", "--token-file", cfg.TokenFile}}
-	gate := &replica.Gate{Probe: func(ctx context.Context) error { return checker.CheckContext(ctx, cfg.ProbeURL) }, Connector: process, Interval: time.Duration(cfg.Interval) * time.Second, Fall: cfg.Fall, Rise: cfg.Rise}
+	gate := &replica.Gate{Probe: func(ctx context.Context) error { return cfg.checkProbes(ctx) }, Connector: process, Interval: time.Duration(cfg.Interval) * time.Second, Fall: cfg.Fall, Rise: cfg.Rise}
 	return gate.Run(ctx)
 }
 
+func (cfg replicaConfig) checkProbes(ctx context.Context) error {
+	probes := cfg.Probes
+	if len(probes) == 0 {
+		probes = []replicaProbe{{URL: cfg.ProbeURL, Host: cfg.Host, Headers: cfg.Headers}}
+	}
+	for _, probe := range probes {
+		checker := &healthcheck.URLChecker{Timeout: time.Duration(cfg.Timeout) * time.Second, Headers: probe.Headers, Host: probe.Host}
+		if err := checker.CheckContext(ctx, probe.URL); err != nil {
+			return fmt.Errorf("probe %s failed: %w", probe.URL, err)
+		}
+	}
+	return nil
+}
+
 func (cfg replicaConfig) validate() error {
-	if err := validateProbeURL(cfg.ProbeURL); err != nil {
+	if len(cfg.Probes) > 0 {
+		if cfg.ProbeURL != "" || cfg.Host != "" || len(cfg.Headers) > 0 {
+			return fmt.Errorf("use either probes or probe_url, host and headers")
+		}
+		for _, probe := range cfg.Probes {
+			if err := validateProbeURL(probe.URL); err != nil {
+				return err
+			}
+		}
+	} else if err := validateProbeURL(cfg.ProbeURL); err != nil {
 		return err
 	}
 	if cfg.Interval < 1 || cfg.Interval > 300 || cfg.Timeout < 1 || cfg.Timeout > 300 {
