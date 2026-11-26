@@ -4,17 +4,18 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
 func TestMultipleProbesRequireBothApplications(t *testing.T) {
-	failed := false
+	var failed atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" && r.Host == "misskey.example.com" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		if r.URL.Path == "/api/heartbeat" && r.Host == "umami.example.com" && !failed {
+		if r.URL.Path == "/api/heartbeat" && r.Host == "umami.example.com" && !failed.Load() {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -36,7 +37,7 @@ func TestMultipleProbesRequireBothApplications(t *testing.T) {
 	if err := cfg.checkProbes(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	failed = true
+	failed.Store(true)
 	if err := cfg.checkProbes(context.Background()); err == nil {
 		t.Fatal("expected unhealthy Umami to make shared replica unhealthy")
 	}
