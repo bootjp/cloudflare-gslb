@@ -77,7 +77,7 @@ func runReplica(cfg replicaConfig) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	process := &replica.Process{Path: cfg.CloudflaredPath, Args: []string{"tunnel", "--no-autoupdate", "--metrics", cfg.MetricsAddress, "run", "--token-file", cfg.TokenFile}}
-	gate := &replica.Gate{Probe: func(ctx context.Context) error { return cfg.checkProbes(ctx) }, Connector: process, Interval: time.Duration(cfg.Interval) * time.Second, Fall: cfg.Fall, Rise: cfg.Rise}
+	gate := &replica.Gate{Probe: cfg.checkProbes, Connector: process, Interval: time.Duration(cfg.Interval) * time.Second, Fall: cfg.Fall, Rise: cfg.Rise}
 	return gate.Run(ctx)
 }
 
@@ -96,16 +96,7 @@ func (cfg replicaConfig) checkProbes(ctx context.Context) error {
 }
 
 func (cfg replicaConfig) validate() error {
-	if len(cfg.Probes) > 0 {
-		if cfg.ProbeURL != "" || cfg.Host != "" || len(cfg.Headers) > 0 {
-			return fmt.Errorf("use either probes or probe_url, host and headers")
-		}
-		for _, probe := range cfg.Probes {
-			if err := validateProbeURL(probe.URL); err != nil {
-				return err
-			}
-		}
-	} else if err := validateProbeURL(cfg.ProbeURL); err != nil {
+	if err := cfg.validateProbes(); err != nil {
 		return err
 	}
 	if cfg.Interval < 1 || cfg.Interval > 300 || cfg.Timeout < 1 || cfg.Timeout > 300 {
@@ -118,6 +109,22 @@ func (cfg replicaConfig) validate() error {
 		return fmt.Errorf("cloudflared and token_file must use absolute paths")
 	}
 	return validateMetrics(cfg.MetricsAddress)
+}
+
+func (cfg replicaConfig) validateProbes() error {
+	if len(cfg.Probes) > 0 {
+		if cfg.ProbeURL != "" || cfg.Host != "" || len(cfg.Headers) > 0 {
+			return fmt.Errorf("use either probes or probe_url, host and headers")
+		}
+		for _, probe := range cfg.Probes {
+			if err := validateProbeURL(probe.URL); err != nil {
+				return err
+			}
+		}
+	} else if err := validateProbeURL(cfg.ProbeURL); err != nil {
+		return err
+	}
+	return nil
 }
 func validateProbeURL(raw string) error {
 	u, err := url.Parse(raw)
